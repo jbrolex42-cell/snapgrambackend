@@ -1104,11 +1104,9 @@ module.exports = {
   getFeed,
   getPost,
   deletePost,
-
   savePost,
   unsavePost,
   toggleSave,
-
   createComment,
   getComments,
 };
