@@ -312,15 +312,11 @@ async function commentLive(req, res) {
 module.exports = {
   startLive,
   getLive,
-
   getActiveLives,
   getFollowingLives,
-
   joinLive,
   leaveLive,
-
   endLive,
-
   likeLive,
   commentLive,
 };

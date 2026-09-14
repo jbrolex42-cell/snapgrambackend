@@ -1,177 +1,243 @@
 const { Server } = require("socket.io");
-
-const User = require("../models/User");
+const jwt = require("jsonwebtoken");
 
 const registerCallSocket = require("./callSocket");
 const registerLiveSocket = require("./liveSocket");
 
-const connectedUsers = new Map();
-
-let ioInstance = null;
-
 function initializeSocket(server) {
   const io = new Server(server, {
     cors: {
-      origin: "*",
-      methods: ["GET", "POST"],
+      origin: true,
+      credentials: true,
     },
+
+    transports: ["websocket", "polling"],
   });
 
-  ioInstance = io;
+  io.connectedUsers = new Map();
 
-  io.connectedUsers = connectedUsers;
+  io.use((socket, next) => {
+    try {
+      const token =
+        socket.handshake?.auth?.token ||
+        socket.handshake?.headers?.authorization
+          ?.replace(/^Bearer\s+/i, "");
+
+      if (!token) {
+        return next(
+          new Error("Authentication token required")
+        );
+      }
+
+      const decoded = jwt.verify(
+        token,
+        process.env.JWT_SECRET
+      );
+
+      const userId =
+        decoded?.id ||
+        decoded?._id ||
+        decoded?.userId;
+
+      if (!userId) {
+        return next(
+          new Error("Invalid authentication token")
+        );
+      }
+
+      socket.userId = String(userId);
+
+      next();
+    } catch (error) {
+      console.error(
+        "SOCKET AUTH ERROR:",
+        error.message
+      );
+
+      next(
+        new Error("Socket authentication failed")
+      );
+    }
+  });
 
   io.on("connection", (socket) => {
+    const userId = String(
+      socket.userId || ""
+    );
+
     console.log(
-      "Snapgram user connected:",
-      socket.id
+      `Socket connected: ${socket.id} | User: ${userId}`
     );
 
-    registerCallSocket(io, socket);
+    if (userId) {
+      io.connectedUsers.set(
+        userId,
+        socket.id
+      );
+    }
 
-    registerLiveSocket(io, socket);
+    socket.io = io;
 
-    socket.on(
-      "user:online",
-      async (userId) => {
-        if (!userId) {
-          return;
+    socket.emit("socket:connected", {
+      socketId: socket.id,
+      userId,
+    });
+
+    if (userId) {
+      socket.broadcast.emit(
+        "user:status",
+        {
+          userId,
+          online: true,
+          status: "online",
         }
+      );
+    }
 
-        const id = String(userId);
-
-        const previousSocketId =
-          connectedUsers.get(id);
-
-        connectedUsers.set(
-          id,
-          socket.id
-        );
-
-        socket.userId = id;
-
-        try {
-          await User.findByIdAndUpdate(
-            id,
-            {
-              isOnline: true,
-              lastSeen: null,
-            }
-          );
-        } catch (error) {
-          console.error(
-            "ONLINE STATUS ERROR:",
-            error
-          );
-        }
-
-        io.emit(
-          "user:status",
-          {
-            userId: id,
-            online: true,
-            lastSeen: null,
-          }
-        );
-
-        if (
-          previousSocketId &&
-          previousSocketId !== socket.id
-        ) {
-          console.log(
-            `Replacing previous socket for user ${id}: ${previousSocketId}`
-          );
-        }
-      }
-    );
+    if (userId) {
+      socket.join(`user:${userId}`);
+    }
 
     socket.on(
       "conversation:join",
-      (conversationId) => {
-        if (!conversationId) {
-          return;
-        }
+      ({ conversationId }) => {
+        try {
+          if (!conversationId) {
+            return;
+          }
 
-        socket.join(
-          `conversation:${conversationId}`
-        );
+          const room =
+            `conversation:${conversationId}`;
+
+          socket.join(room);
+
+          socket.emit(
+            "conversation:joined",
+            {
+              conversationId:
+                String(conversationId),
+              room,
+            }
+          );
+
+          console.log(
+            `Conversation joined: ${userId} -> ${conversationId}`
+          );
+        } catch (error) {
+          console.error(
+            "CONVERSATION JOIN ERROR:",
+            error
+          );
+        }
       }
     );
 
     socket.on(
       "conversation:leave",
-      (conversationId) => {
-        if (!conversationId) {
-          return;
-        }
+      ({ conversationId }) => {
+        try {
+          if (!conversationId) {
+            return;
+          }
 
-        socket.leave(
-          `conversation:${conversationId}`
-        );
-      }
-    );
+          const room =
+            `conversation:${conversationId}`;
 
-    socket.on(
-      "message:send",
-      (message) => {
-        if (!message?.conversation) {
-          return;
-        }
+          socket.leave(room);
 
-        io.to(
-          `conversation:${message.conversation}`
-        ).emit(
-          "message:new",
-          message
-        );
-      }
-    );
-
-    socket.on(
-      "message:typing",
-      ({
-        conversationId,
-        userId,
-        username,
-      }) => {
-        if (!conversationId) {
-          return;
-        }
-
-        socket
-          .to(
-            `conversation:${conversationId}`
-          )
-          .emit(
-            "message:typing",
+          socket.emit(
+            "conversation:left",
             {
-              userId,
-              username,
+              conversationId:
+                String(conversationId),
             }
           );
+        } catch (error) {
+          console.error(
+            "CONVERSATION LEAVE ERROR:",
+            error
+          );
+        }
       }
     );
 
     socket.on(
-      "message:stopTyping",
+      "typing:start",
       ({
         conversationId,
-        userId,
+        receiverId,
       }) => {
-        if (!conversationId) {
-          return;
-        }
+        try {
+          if (
+            !conversationId ||
+            !receiverId
+          ) {
+            return;
+          }
 
-        socket
-          .to(
-            `conversation:${conversationId}`
-          )
-          .emit(
-            "message:stopTyping",
+          const receiverSocketId =
+            io.connectedUsers.get(
+              String(receiverId)
+            );
+
+          if (!receiverSocketId) {
+            return;
+          }
+
+          io.to(receiverSocketId).emit(
+            "typing:start",
             {
+              conversationId:
+                String(conversationId),
               userId,
             }
           );
+        } catch (error) {
+          console.error(
+            "TYPING START ERROR:",
+            error
+          );
+        }
+      }
+    );
+
+    socket.on(
+      "typing:stop",
+      ({
+        conversationId,
+        receiverId,
+      }) => {
+        try {
+          if (
+            !conversationId ||
+            !receiverId
+          ) {
+            return;
+          }
+
+          const receiverSocketId =
+            io.connectedUsers.get(
+              String(receiverId)
+            );
+
+          if (!receiverSocketId) {
+            return;
+          }
+
+          io.to(receiverSocketId).emit(
+            "typing:stop",
+            {
+              conversationId:
+                String(conversationId),
+              userId,
+            }
+          );
+        } catch (error) {
+          console.error(
+            "TYPING STOP ERROR:",
+            error
+          );
+        }
       }
     );
 
@@ -180,173 +246,132 @@ function initializeSocket(server) {
       ({
         conversationId,
         messageId,
-        userId,
+        senderId,
       }) => {
-        if (!conversationId) {
-          return;
-        }
+        try {
+          if (
+            !conversationId ||
+            !senderId
+          ) {
+            return;
+          }
 
-        socket
-          .to(
-            `conversation:${conversationId}`
-          )
-          .emit(
+          const senderSocketId =
+            io.connectedUsers.get(
+              String(senderId)
+            );
+
+          if (!senderSocketId) {
+            return;
+          }
+
+          io.to(senderSocketId).emit(
             "message:seen",
             {
-              messageId,
-              userId,
+              conversationId:
+                String(conversationId),
+              messageId:
+                messageId
+                  ? String(messageId)
+                  : null,
+              seenBy: userId,
             }
           );
+        } catch (error) {
+          console.error(
+            "MESSAGE SEEN ERROR:",
+            error
+          );
+        }
       }
     );
 
-    socket.on(
-      "message:reaction",
-      ({
-        conversationId,
-        messageId,
-        reactions,
-      }) => {
-        if (!conversationId) {
-          return;
-        }
+    registerCallSocket(
+      io,
+      socket
+    );
 
-        socket
-          .to(
-            `conversation:${conversationId}`
-          )
-          .emit(
-            "message:reaction",
-            {
-              messageId,
-              reactions,
-            }
-          );
-      }
+    registerLiveSocket(
+      io,
+      socket
     );
 
     socket.on(
-      "message:unsent",
-      ({
-        conversationId,
-        messageId,
-      }) => {
-        if (!conversationId) {
-          return;
-        }
+      "user:join",
+      ({ userId: requestedUserId }) => {
+        try {
+          const targetUserId =
+            requestedUserId ||
+            socket.userId;
 
-        socket
-          .to(
-            `conversation:${conversationId}`
-          )
-          .emit(
-            "message:unsent",
-            {
-              messageId,
-            }
+          if (!targetUserId) {
+            return;
+          }
+
+          socket.join(
+            `user:${String(
+              targetUserId
+            )}`
           );
-      }
-    );
-
-    socket.on(
-      "message:deleted",
-      ({
-        conversationId,
-        messageId,
-      }) => {
-        if (!conversationId) {
-          return;
-        }
-
-        socket
-          .to(
-            `conversation:${conversationId}`
-          )
-          .emit(
-            "message:deleted",
-            {
-              messageId,
-            }
+        } catch (error) {
+          console.error(
+            "USER JOIN ERROR:",
+            error
           );
+        }
       }
     );
 
     socket.on(
       "disconnect",
-      async () => {
-        const userId = socket.userId;
+      (reason) => {
+        try {
+          
+          if (userId) {
+            const currentSocketId =
+              io.connectedUsers.get(
+                userId
+              );
 
-        if (!userId) {
-          console.log(
-            "Snapgram user disconnected:",
-            socket.id
-          );
+            if (
+              currentSocketId ===
+              socket.id
+            ) {
+              io.connectedUsers.delete(
+                userId
+              );
 
-          return;
-        }
-
-        if (
-          connectedUsers.get(userId) ===
-          socket.id
-        ) {
-          connectedUsers.delete(userId);
-
-          const lastSeen =
-            new Date();
-
-          try {
-            await User.findByIdAndUpdate(
-              userId,
-              {
-                isOnline: false,
-                lastSeen,
-              }
-            );
-          } catch (error) {
-            console.error(
-              "OFFLINE STATUS ERROR:",
-              error
-            );
+              socket.broadcast.emit(
+                "user:status",
+                {
+                  userId,
+                  online: false,
+                  status: "offline",
+                }
+              );
+            }
           }
 
-          io.emit(
-            "user:status",
-            {
-              userId,
-              online: false,
-              lastSeen,
-            }
-          );
-
           console.log(
-            "User offline:",
-            userId
+            `Socket disconnected: ${socket.id} | User: ${userId} | Reason: ${reason}`
+          );
+        } catch (error) {
+          console.error(
+            "SOCKET DISCONNECT ERROR:",
+            error
           );
         }
-
-        console.log(
-          "Snapgram user disconnected:",
-          socket.id
-        );
       }
     );
   });
 
-  return io;
-}
-
-function getSocket() {
-  return ioInstance;
-}
-
-function getUserSocket(userId) {
-  return connectedUsers.get(
-    String(userId)
+  console.log(
+    "Socket.IO initialized successfully"
   );
+
+  return io;
 }
 
 module.exports = {
   initializeSocket,
-  getSocket,
-  getUserSocket,
 };

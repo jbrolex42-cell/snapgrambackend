@@ -1,3 +1,5 @@
+const mongoose = require("mongoose");
+
 const uploadToCloudinary =
   require("../utils/uploadToCloudinary");
 
@@ -10,35 +12,66 @@ function getCurrentUserId(req) {
     : null;
 }
 
+function isValidObjectId(id) {
+  return mongoose.Types.ObjectId.isValid(id);
+}
+
 function formatStory(story, userId) {
-  const likes = Array.isArray(story.likes)
-    ? story.likes
+  if (!story) {
+    return null;
+  }
+
+  const plainStory =
+    typeof story.toObject === "function"
+      ? story.toObject()
+      : story;
+
+  const likes = Array.isArray(
+    plainStory.likes
+  )
+    ? plainStory.likes
     : [];
 
   const isLiked = userId
     ? likes.some(
         (id) =>
-          String(id) === String(userId)
+          String(id) ===
+          String(userId)
       )
     : false;
 
   return {
-    ...story.toObject(),
+    ...plainStory,
 
     isLiked,
     liked: isLiked,
-    likesCount: likes.length,
+
+    likesCount:
+      likes.length,
+
+    viewerCount:
+      Array.isArray(
+        plainStory.viewers
+      )
+        ? plainStory.viewers.length
+        : 0,
+  };
+}
+
+function activeStoryFilter() {
+  return {
+    expiresAt: {
+      $gt: new Date(),
+    },
   };
 }
 
 async function getStories(req, res) {
   try {
     const stories =
-      await Story.find({
-        expiresAt: {
-          $gt: new Date(),
-        },
-      })
+      await Story.find(
+        activeStoryFilter()
+      )
         .populate(
           "user",
           "username fullName avatar isVerified"
@@ -50,18 +83,16 @@ async function getStories(req, res) {
     const userId =
       getCurrentUserId(req);
 
-    const formattedStories =
-      stories.map((story) =>
-        formatStory(
-          story,
-          userId
-        )
-      );
-
     return res.json({
       success: true,
-      stories:
-        formattedStories,
+
+      stories: stories.map(
+        (story) =>
+          formatStory(
+            story,
+            userId
+          )
+      ),
     });
   } catch (error) {
     console.error(
@@ -83,11 +114,9 @@ async function getStoryGroups(
 ) {
   try {
     const stories =
-      await Story.find({
-        expiresAt: {
-          $gt: new Date(),
-        },
-      })
+      await Story.find(
+        activeStoryFilter()
+      )
         .populate(
           "user",
           "username fullName avatar isVerified"
@@ -99,35 +128,42 @@ async function getStoryGroups(
     const userId =
       getCurrentUserId(req);
 
-    const groups = {};
+    const groups = new Map();
 
-    stories.forEach((story) => {
+    for (const story of stories) {
       if (!story.user) {
-        return;
+        continue;
       }
 
       const storyUserId =
-        story.user._id.toString();
+        String(story.user._id);
 
-      if (!groups[storyUserId]) {
-        groups[storyUserId] = {
-          user: story.user,
-          stories: [],
-        };
+      if (!groups.has(storyUserId)) {
+        groups.set(
+          storyUserId,
+          {
+            user: story.user,
+            stories: [],
+          }
+        );
       }
 
-      groups[storyUserId].stories.push(
-        formatStory(
-          story,
-          userId
-        )
-      );
-    });
+      groups
+        .get(storyUserId)
+        .stories.push(
+          formatStory(
+            story,
+            userId
+          )
+        );
+    }
 
     return res.json({
       success: true,
       groups:
-        Object.values(groups),
+        Array.from(
+          groups.values()
+        ),
     });
   } catch (error) {
     console.error(
@@ -148,14 +184,21 @@ async function getUserStories(
   res
 ) {
   try {
+    const { userId } =
+      req.params;
+
+    if (!isValidObjectId(userId)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid user ID",
+      });
+    }
+
     const stories =
       await Story.find({
-        user:
-          req.params.userId,
-
-        expiresAt: {
-          $gt: new Date(),
-        },
+        user: userId,
+        ...activeStoryFilter(),
       })
         .populate(
           "user",
@@ -165,21 +208,19 @@ async function getUserStories(
           createdAt: 1,
         });
 
-    const userId =
+    const currentUserId =
       getCurrentUserId(req);
-
-    const formattedStories =
-      stories.map((story) =>
-        formatStory(
-          story,
-          userId
-        )
-      );
 
     return res.json({
       success: true,
-      stories:
-        formattedStories,
+
+      stories: stories.map(
+        (story) =>
+          formatStory(
+            story,
+            currentUserId
+          )
+      ),
     });
   } catch (error) {
     console.error(
@@ -200,7 +241,25 @@ async function createStory(
   res
 ) {
   try {
+   
+    if (!req.user?._id) {
+      return res.status(401).json({
+        success: false,
+        message:
+          "Authentication required",
+      });
+    }
+
     if (!req.file) {
+      console.error(
+        "CREATE STORY: NO FILE RECEIVED"
+      );
+
+      console.error(
+        "BODY:",
+        req.body
+      );
+
       return res.status(400).json({
         success: false,
         message:
@@ -208,24 +267,104 @@ async function createStory(
       });
     }
 
+    console.log(
+      "CREATE STORY FILE:",
+      {
+        fieldname:
+          req.file.fieldname,
+
+        originalname:
+          req.file.originalname,
+
+        mimetype:
+          req.file.mimetype,
+
+        size:
+          req.file.size,
+
+        hasBuffer:
+          Buffer.isBuffer(
+            req.file.buffer
+          ),
+      }
+    );
+
+    if (
+      !req.file.buffer ||
+      !Buffer.isBuffer(
+        req.file.buffer
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Uploaded story file is invalid",
+      });
+    }
+
     const isVideo =
-      req.file.mimetype.startsWith(
+      req.file.mimetype?.startsWith(
         "video/"
       );
+
+    const mediaType =
+      isVideo
+        ? "video"
+        : "image";
 
     const resourceType =
       isVideo
         ? "video"
         : "image";
 
-    const result =
-      await uploadToCloudinary(
-        req.file.buffer,
-        "snapgram/stories",
-        resourceType
+    let caption = "";
+
+    if (
+      typeof req.body?.caption ===
+      "string"
+    ) {
+      caption =
+        req.body.caption.trim();
+    }
+
+    if (caption.length > 500) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Caption cannot exceed 500 characters",
+      });
+    }
+
+    let uploadResult;
+
+    try {
+      uploadResult =
+        await uploadToCloudinary(
+          req.file.buffer,
+          "snapgram/stories",
+          resourceType
+        );
+    } catch (uploadError) {
+      console.error(
+        "CLOUDINARY STORY UPLOAD ERROR:",
+        uploadError
       );
 
-    if (!result?.secure_url) {
+      return res.status(500).json({
+        success: false,
+        message:
+          "Unable to upload story media",
+      });
+    }
+
+    if (
+      !uploadResult?.secure_url
+    ) {
+      console.error(
+        "CLOUDINARY RESULT INVALID:",
+        uploadResult
+      );
+
       return res.status(500).json({
         success: false,
         message:
@@ -248,18 +387,11 @@ async function createStory(
           req.user._id,
 
         mediaUrl:
-          result.secure_url,
+          uploadResult.secure_url,
 
-        mediaType:
-          isVideo
-            ? "video"
-            : "image",
+        mediaType,
 
-        caption:
-          typeof req.body.caption ===
-          "string"
-            ? req.body.caption.trim()
-            : "",
+        caption,
 
         expiresAt,
       });
@@ -272,13 +404,29 @@ async function createStory(
         "username fullName avatar isVerified"
       );
 
+    console.log(
+      "CREATE STORY SUCCESS:",
+      {
+        storyId:
+          String(story._id),
+
+        userId:
+          String(req.user._id),
+
+        mediaType,
+
+        mediaUrl:
+          uploadResult.secure_url,
+      }
+    );
+
     return res.status(201).json({
       success: true,
-      story:
-        formatStory(
-          populatedStory,
-          getCurrentUserId(req)
-        ),
+
+      story: formatStory(
+        populatedStory,
+        getCurrentUserId(req)
+      ),
     });
   } catch (error) {
     console.error(
@@ -299,14 +447,21 @@ async function viewStory(
   res
 ) {
   try {
+    const { id } =
+      req.params;
+
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid story ID",
+      });
+    }
+
     const story =
       await Story.findOne({
-        _id:
-          req.params.id,
-
-        expiresAt: {
-          $gt: new Date(),
-        },
+        _id: id,
+        ...activeStoryFilter(),
       });
 
     if (!story) {
@@ -314,6 +469,17 @@ async function viewStory(
         success: false,
         message:
           "Story not found or expired",
+      });
+    }
+
+    const userId =
+      getCurrentUserId(req);
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message:
+          "Authentication required",
       });
     }
 
@@ -325,14 +491,11 @@ async function viewStory(
       story.viewers = [];
     }
 
-    const currentUserId =
-      getCurrentUserId(req);
-
     const alreadyViewed =
       story.viewers.some(
-        (id) =>
-          String(id) ===
-          String(currentUserId)
+        (viewerId) =>
+          String(viewerId) ===
+          String(userId)
       );
 
     if (!alreadyViewed) {
@@ -346,6 +509,7 @@ async function viewStory(
     return res.json({
       success: true,
       viewed: true,
+
       viewersCount:
         story.viewers.length,
     });
@@ -368,13 +532,21 @@ async function deleteStory(
   res
 ) {
   try {
+    const { id } =
+      req.params;
+
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid story ID",
+      });
+    }
+
     const story =
       await Story.findOneAndDelete({
-        _id:
-          req.params.id,
-
-        user:
-          req.user._id,
+        _id: id,
+        user: req.user._id,
       });
 
     if (!story) {
@@ -389,6 +561,9 @@ async function deleteStory(
       success: true,
       message:
         "Story deleted",
+      storyId: String(
+        story._id
+      ),
     });
   } catch (error) {
     console.error(
@@ -411,12 +586,8 @@ async function likeStory(
   try {
     const story =
       await Story.findOne({
-        _id:
-          req.params.id,
-
-        expiresAt: {
-          $gt: new Date(),
-        },
+        _id: req.params.id,
+        ...activeStoryFilter(),
       });
 
     if (!story) {
@@ -457,8 +628,10 @@ async function likeStory(
       success: true,
       liked: true,
       isLiked: true,
+
       likesCount:
         story.likes.length,
+
       storyId:
         String(story._id),
     });
@@ -483,12 +656,8 @@ async function unlikeStory(
   try {
     const story =
       await Story.findOne({
-        _id:
-          req.params.id,
-
-        expiresAt: {
-          $gt: new Date(),
-        },
+        _id: req.params.id,
+        ...activeStoryFilter(),
       });
 
     if (!story) {
@@ -499,23 +668,19 @@ async function unlikeStory(
       });
     }
 
-    if (
-      !Array.isArray(
-        story.likes
-      )
-    ) {
-      story.likes = [];
-    }
-
     const userId =
       getCurrentUserId(req);
 
     story.likes =
-      story.likes.filter(
-        (id) =>
-          String(id) !==
-          String(userId)
-      );
+      Array.isArray(
+        story.likes
+      )
+        ? story.likes.filter(
+            (id) =>
+              String(id) !==
+              String(userId)
+          )
+        : [];
 
     await story.save();
 
@@ -523,8 +688,10 @@ async function unlikeStory(
       success: true,
       liked: false,
       isLiked: false,
+
       likesCount:
         story.likes.length,
+
       storyId:
         String(story._id),
     });
@@ -549,12 +716,8 @@ async function toggleStoryLike(
   try {
     const story =
       await Story.findOne({
-        _id:
-          req.params.id,
-
-        expiresAt: {
-          $gt: new Date(),
-        },
+        _id: req.params.id,
+        ...activeStoryFilter(),
       });
 
     if (!story) {
@@ -585,7 +748,7 @@ async function toggleStoryLike(
 
     let liked;
 
-    if (existingIndex !== -1) {
+    if (existingIndex >= 0) {
       story.likes.splice(
         existingIndex,
         1
@@ -604,10 +767,13 @@ async function toggleStoryLike(
 
     return res.json({
       success: true,
+
       liked,
       isLiked: liked,
+
       likesCount:
         story.likes.length,
+
       storyId:
         String(story._id),
     });
@@ -631,7 +797,7 @@ async function replyToStory(
 ) {
   try {
     const text =
-      typeof req.body.text ===
+      typeof req.body?.text ===
       "string"
         ? req.body.text.trim()
         : "";
@@ -654,12 +820,8 @@ async function replyToStory(
 
     const story =
       await Story.findOne({
-        _id:
-          req.params.id,
-
-        expiresAt: {
-          $gt: new Date(),
-        },
+        _id: req.params.id,
+        ...activeStoryFilter(),
       });
 
     if (!story) {
@@ -681,7 +843,6 @@ async function replyToStory(
     story.replies.push({
       user:
         req.user._id,
-
       text,
     });
 
@@ -725,12 +886,8 @@ async function getStoryReplies(
   try {
     const story =
       await Story.findOne({
-        _id:
-          req.params.id,
-
-        expiresAt: {
-          $gt: new Date(),
-        },
+        _id: req.params.id,
+        ...activeStoryFilter(),
       }).populate(
         "replies.user",
         "username fullName avatar isVerified"
@@ -746,6 +903,7 @@ async function getStoryReplies(
 
     return res.json({
       success: true,
+
       replies:
         story.replies || [],
     });
@@ -770,11 +928,8 @@ async function getStoryViewers(
   try {
     const story =
       await Story.findOne({
-        _id:
-          req.params.id,
-
-        user:
-          req.user._id,
+        _id: req.params.id,
+        user: req.user._id,
       }).populate(
         "viewers",
         "username fullName avatar isVerified"
@@ -790,11 +945,16 @@ async function getStoryViewers(
 
     return res.json({
       success: true,
+
       viewers:
         story.viewers || [],
+
       count:
-        story.viewers?.length ||
-        0,
+        Array.isArray(
+          story.viewers
+        )
+          ? story.viewers.length
+          : 0,
     });
   } catch (error) {
     console.error(
@@ -816,6 +976,7 @@ module.exports = {
   getUserStories,
 
   createStory,
+
   viewStory,
   deleteStory,
 

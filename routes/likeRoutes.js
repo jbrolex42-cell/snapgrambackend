@@ -10,21 +10,18 @@ const {
 
 const auth = require("../middleware/auth");
 
-// Like
 router.post(
   "/posts/:id/like",
   auth,
   likePost
 );
 
-// Unlike
 router.delete(
   "/posts/:id/like",
   auth,
   unlikePost
 );
 
-// Optional toggle endpoint
 router.post(
   "/posts/:id/toggle-like",
   auth,

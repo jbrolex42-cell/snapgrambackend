@@ -2,49 +2,56 @@ const Notification = require("../models/Notification");
 
 async function getNotifications(req, res) {
   try {
-    const notifications =
-      await Notification.find({
-        recipient: req.user._id,
-      })
-        .populate(
-          "sender",
-          "username fullName avatar isVerified"
-        )
-        .populate(
-          "post",
-          "_id image media"
-        )
-        .populate(
-          "reel",
-          "_id thumbnail coverImage media"
-        )
-        .populate(
-          "story",
-          "_id media image"
-        )
-        .populate(
-          "comment",
-          "_id text"
-        )
-        .populate(
-          "call",
-          "_id caller receiver callType status"
-        )
-        .populate(
-          "message",
-          "_id conversation sender text mediaUrl"
-        )
-        .populate(
-          "live",
-          "_id host status title viewerCount startedAt endedAt"
-        )
-        .sort({
-          createdAt: -1,
-        })
-        .limit(100)
-        .lean();
+    const recipientId = req.user?._id;
 
-    return res.json({
+    if (!recipientId) {
+      return res.status(401).json({
+        message: "Authentication required",
+      });
+    }
+
+    const notifications = await Notification.find({
+      recipient: recipientId,
+    })
+      .populate(
+        "sender",
+        "username fullName name displayName avatar profilePicture isVerified"
+      )
+      .populate(
+        "post",
+        "_id image media caption createdAt"
+      )
+      .populate(
+        "reel",
+        "_id thumbnail coverImage media caption createdAt"
+      )
+      .populate(
+        "story",
+        "_id media image createdAt"
+      )
+      .populate(
+        "comment",
+        "_id text createdAt"
+      )
+      .populate(
+        "call",
+        "_id caller receiver callType status createdAt"
+      )
+      .populate(
+        "message",
+        "_id conversation sender text mediaUrl createdAt"
+      )
+      .populate(
+        "live",
+        "_id host status title viewerCount startedAt endedAt"
+      )
+      .sort({
+        createdAt: -1,
+      })
+      .limit(100)
+      .lean();
+
+    return res.status(200).json({
       notifications,
     });
   } catch (error) {
@@ -55,19 +62,31 @@ async function getNotifications(req, res) {
 
     return res.status(500).json({
       message: "Unable to load notifications",
+      error:
+        process.env.NODE_ENV === "development"
+          ? error.message
+          : undefined,
     });
   }
 }
 
 async function getUnreadCount(req, res) {
   try {
+    const recipientId = req.user?._id;
+
+    if (!recipientId) {
+      return res.status(401).json({
+        message: "Authentication required",
+      });
+    }
+
     const count =
       await Notification.countDocuments({
-        recipient: req.user._id,
+        recipient: recipientId,
         isRead: false,
       });
 
-    return res.json({
+    return res.status(200).json({
       count,
     });
   } catch (error) {
@@ -84,11 +103,19 @@ async function getUnreadCount(req, res) {
 
 async function markAsRead(req, res) {
   try {
+    const recipientId = req.user?._id;
+
+    if (!recipientId) {
+      return res.status(401).json({
+        message: "Authentication required",
+      });
+    }
+
     const notification =
       await Notification.findOneAndUpdate(
         {
           _id: req.params.id,
-          recipient: req.user._id,
+          recipient: recipientId,
         },
         {
           $set: {
@@ -106,7 +133,7 @@ async function markAsRead(req, res) {
       });
     }
 
-    return res.json({
+    return res.status(200).json({
       notification,
     });
   } catch (error) {
@@ -123,9 +150,17 @@ async function markAsRead(req, res) {
 
 async function markAllAsRead(req, res) {
   try {
+    const recipientId = req.user?._id;
+
+    if (!recipientId) {
+      return res.status(401).json({
+        message: "Authentication required",
+      });
+    }
+
     await Notification.updateMany(
       {
-        recipient: req.user._id,
+        recipient: recipientId,
         isRead: false,
       },
       {
@@ -135,9 +170,8 @@ async function markAllAsRead(req, res) {
       }
     );
 
-    return res.json({
-      message:
-        "All notifications marked as read",
+    return res.status(200).json({
+      message: "All notifications marked as read",
     });
   } catch (error) {
     console.error(
@@ -146,8 +180,7 @@ async function markAllAsRead(req, res) {
     );
 
     return res.status(500).json({
-      message:
-        "Unable to update notifications",
+      message: "Unable to update notifications",
     });
   }
 }

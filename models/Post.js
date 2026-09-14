@@ -36,7 +36,9 @@ const mediaSchema = new mongoose.Schema(
       default: null,
     },
   },
-  { _id: false }
+  {
+    _id: false,
+  }
 );
 
 const locationSchema = new mongoose.Schema(
@@ -44,7 +46,6 @@ const locationSchema = new mongoose.Schema(
     name: {
       type: String,
       trim: true,
-      maxlength: 300,
       default: "",
     },
 
@@ -58,7 +59,9 @@ const locationSchema = new mongoose.Schema(
       default: null,
     },
   },
-  { _id: false }
+  {
+    _id: false,
+  }
 );
 
 const postSchema = new mongoose.Schema(
@@ -72,13 +75,25 @@ const postSchema = new mongoose.Schema(
 
     media: {
       type: [mediaSchema],
+      required: true,
       validate: {
         validator(value) {
-          return Array.isArray(value) && value.length >= 1 && value.length <= 10;
+          return (
+            Array.isArray(value) &&
+            value.length >= 1 &&
+            value.length <= 10
+          );
         },
         message: "A post must contain between 1 and 10 media files.",
       },
+    },
+
+    postType: {
+      type: String,
+      enum: ["post", "reel", "repost"],
+      default: "post",
       required: true,
+      index: true,
     },
 
     caption: {
@@ -118,6 +133,13 @@ const postSchema = new mongoose.Schema(
       },
     ],
 
+    repostedBy: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+
     commentsCount: {
       type: Number,
       default: 0,
@@ -136,20 +158,48 @@ const postSchema = new mongoose.Schema(
       default: "public",
       index: true,
     },
+
+    repostOf: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Post",
+      default: null,
+      index: true,
+    },
+
+    repostsCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
   },
   {
     timestamps: true,
+
     toJSON: {
       virtuals: true,
     },
+
     toObject: {
       virtuals: true,
     },
   }
 );
 
-postSchema.virtual("likesCount").get(function () {
-  return Array.isArray(this.likes) ? this.likes.length : 0;
+postSchema.index({
+  user: 1,
+  postType: 1,
+  createdAt: -1,
+});
+
+postSchema.index({
+  savedBy: 1,
+  createdAt: -1,
+});
+
+postSchema.index({
+  user: 1,
+  visibility: 1,
+  createdAt: -1,
 });
 
 module.exports = mongoose.model("Post", postSchema);

@@ -7,46 +7,42 @@ const auth = require("../middleware/auth");
 const {
   startCall,
   updateCall,
+  getCall,
   getCallHistory,
   updateCallStatus,
   getTurnCredentials,
   createGroupCall,
 } = require("../controllers/callController");
 
-router.post(
-  "/",
-  auth,
-  startCall
-);
+router.use(auth);
 
-router.patch(
-  "/:callId",
-  auth,
-  updateCall
+router.post("/", startCall);
+
+router.get("/history", getCallHistory);
+
+router.get(
+  "/turn-credentials",
+  getTurnCredentials
 );
 
 router.post(
   "/group",
-  auth,
   createGroupCall
 );
 
 router.get(
-  "/history",
-  auth,
-  getCallHistory
+  "/:callId",
+  getCall
+);
+
+router.patch(
+  "/:callId",
+  updateCall
 );
 
 router.patch(
   "/:callId/status",
-  auth,
   updateCallStatus
-);
-
-router.get(
-  "/turn-credentials",
-  auth,
-  getTurnCredentials
 );
 
 module.exports = router;

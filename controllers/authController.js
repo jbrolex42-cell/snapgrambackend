@@ -185,14 +185,18 @@ async function login(req, res) {
     const {
       email,
       phone,
+      username,
       password,
     } = req.body;
 
-    const cleanEmail = email
-      ?.trim()
-      .toLowerCase();
+    const cleanEmail =
+      email?.trim().toLowerCase() || "";
 
-    const cleanPhone = phone?.trim();
+    const cleanPhone =
+      phone?.trim() || "";
+
+    const cleanUsername =
+      username?.trim().toLowerCase() || "";
 
     if (!password) {
       return res.status(400).json({
@@ -200,10 +204,14 @@ async function login(req, res) {
       });
     }
 
-    if (!cleanEmail && !cleanPhone) {
+    if (
+      !cleanEmail &&
+      !cleanPhone &&
+      !cleanUsername
+    ) {
       return res.status(400).json({
         message:
-          "Email or phone number is required",
+          "Email, username, or phone number is required",
       });
     }
 
@@ -221,6 +229,12 @@ async function login(req, res) {
       });
     }
 
+    if (cleanUsername) {
+      conditions.push({
+        username: cleanUsername,
+      });
+    }
+
     const user = await User.findOne({
       $or: conditions,
     }).select("+password");
@@ -228,7 +242,7 @@ async function login(req, res) {
     if (!user) {
       return res.status(401).json({
         message:
-          "Invalid email, phone number or password",
+          "Invalid email, username, phone number or password",
       });
     }
 
@@ -248,7 +262,7 @@ async function login(req, res) {
     if (!passwordMatches) {
       return res.status(401).json({
         message:
-          "Invalid email, phone number or password",
+          "Invalid email, username, phone number or password",
       });
     }
 

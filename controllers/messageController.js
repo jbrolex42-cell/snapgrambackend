@@ -11,8 +11,6 @@ const USER_FIELDS =
 const MESSAGE_SENDER_FIELDS =
   "username fullName avatar isVerified";
 
-
-
 function isValidObjectId(value) {
   return mongoose.Types.ObjectId.isValid(
     String(value || "")

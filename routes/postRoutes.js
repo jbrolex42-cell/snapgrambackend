@@ -3,6 +3,13 @@ const express = require("express");
 const {
   createPost,
   getFeed,
+  getMyPosts,
+  getMyReels,
+  getSavedPosts,
+  getTaggedPosts,
+  getMyReposts,
+  repostPost,
+  unrepostPost,
   getPost,
   deletePost,
   savePost,
@@ -29,6 +36,36 @@ router.get(
   getFeed
 );
 
+router.get(
+  "/mine",
+  protect,
+  getMyPosts
+);
+
+router.get(
+  "/reels",
+  protect,
+  getMyReels
+);
+
+router.get(
+  "/saved",
+  protect,
+  getSavedPosts
+);
+
+router.get(
+  "/tagged",
+  protect,
+  getTaggedPosts
+);
+
+router.get(
+  "/reposts",
+  protect,
+  getMyReposts
+);
+
 router.post(
   "/",
   protect,
@@ -36,16 +73,16 @@ router.post(
   createPost
 );
 
-router.get(
-  "/:id",
+router.post(
+  "/:id/repost",
   protect,
-  getPost
+  repostPost
 );
 
 router.delete(
-  "/:id",
+  "/:id/repost",
   protect,
-  deletePost
+  unrepostPost
 );
 
 router.post(
@@ -94,6 +131,18 @@ router.get(
   "/:id/comments",
   protect,
   getComments
+);
+
+router.delete(
+  "/:id",
+  protect,
+  deletePost
+);
+
+router.get(
+  "/:id",
+  protect,
+  getPost
 );
 
 module.exports = router;

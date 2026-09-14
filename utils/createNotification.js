@@ -1,22 +1,5 @@
 const Notification = require("../models/Notification");
 
-/**
- * @param {Object} options
- * @param {String|ObjectId} options.recipient - User receiving notification
- * @param {String|ObjectId} options.sender - User causing notification
- * @param {String} options.type - Notification type
- * @param {String|ObjectId|null} options.post - Related post
- * @param {String|ObjectId|null} options.reel - Related reel
- * @param {String|ObjectId|null} options.story - Related story
- * @param {String|ObjectId|null} options.comment - Related comment
- * @param {String|ObjectId|null} options.message - Related message
- * @param {String|ObjectId|null} options.call - Related call
- * @param {String} options.text - Notification text
- * @param {Boolean} options.emit - Whether to send through Socket.IO
- * @param {Object} options.io - Socket.IO instance
- *
- * @returns {Promise<Object|null>}
- */
 async function createNotification({
   recipient,
   sender,

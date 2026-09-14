@@ -13,6 +13,7 @@ const notificationSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
+      index: true,
     },
 
     type: {
@@ -22,17 +23,28 @@ const notificationSchema = new mongoose.Schema(
         "comment",
         "follow",
         "mention",
+
         "story_like",
         "story_reply",
+
         "reel_like",
         "reel_comment",
+
         "message",
+
         "follow_request",
         "follow_accept",
+
         "call",
+
+        "live_started",
+        "live_joined",
+        "live_ended",
+
         "system",
       ],
       required: true,
+      index: true,
     },
 
     post: {
@@ -71,21 +83,23 @@ const notificationSchema = new mongoose.Schema(
       default: null,
     },
 
+    live: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Live",
+      default: null,
+    },
+
     text: {
       type: String,
       default: "",
+      trim: true,
       maxlength: 300,
-    },
-
-    read: {
-      type: Boolean,
-      default: false,
-      index: true,
     },
 
     isRead: {
       type: Boolean,
       default: false,
+      index: true,
     },
   },
   {
@@ -101,6 +115,18 @@ notificationSchema.index({
 notificationSchema.index({
   recipient: 1,
   isRead: 1,
+});
+
+notificationSchema.index({
+  recipient: 1,
+  type: 1,
+});
+
+notificationSchema.index({
+  recipient: 1,
+  sender: 1,
+  type: 1,
+  createdAt: -1,
 });
 
 module.exports = mongoose.model(

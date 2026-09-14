@@ -705,11 +705,9 @@ module.exports = {
   createReel,
   getReels,
   getReel,
-
   likeReel,
   unlikeReel,
   toggleReelLike,
-
   saveReel,
   incrementViews,
 };

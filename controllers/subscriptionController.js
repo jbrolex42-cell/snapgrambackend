@@ -13,11 +13,6 @@ const {
   normalizePhoneNumber,
 } = require("../config/mpesa");
 
-
-// ============================================================
-// HELPERS
-// ============================================================
-
 function getUserId(req) {
   return (
     req.user?._id ||
@@ -216,7 +211,6 @@ async function createCheckout(req, res) {
       });
     }
 
-    // Free does not require M-PESA checkout.
     if (plan.id === "free") {
       return res.status(400).json({
         success: false,
@@ -639,7 +633,6 @@ async function mpesaCallback(req, res) {
         "M-PESA CALLBACK: Missing stkCallback"
       );
 
-      // Always acknowledge Safaricom.
       return res.status(200).json({
         ResultCode: 0,
         ResultDesc: "Accepted",
