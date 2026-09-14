@@ -25,12 +25,21 @@ const likeRoutes = require("./routes/likeRoutes");
 const messageRoutes = require("./routes/messageRoutes");
 const callRoutes = require("./routes/callRoutes");
 const uploadRoutes = require("./routes/uploadRoutes");
-const settingsRoutes =require("./routes/settingsRoutes");
-const verificationRoutes =require("./routes/verificationRoutes");
+const settingsRoutes = require("./routes/settingsRoutes");
+const verificationRoutes = require("./routes/verificationRoutes");
 const subscriptionRoutes = require("./routes/subscriptionRoutes");
 const liveRoutes = require("./routes/liveRoutes");
 
 const cloudinary = require("cloudinary").v2;
+
+const app = express();
+const server = http.createServer(app);
+
+const PORT = process.env.PORT || 5000;
+
+/* -------------------------------------------------------
+   CLOUDINARY
+------------------------------------------------------- */
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -38,12 +47,9 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-const app = express();
-const server = http.createServer(app);
-
-connectDB();
-
-initializeSocket(server);
+/* -------------------------------------------------------
+   MIDDLEWARE
+------------------------------------------------------- */
 
 app.use(
   cors({
@@ -55,6 +61,11 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+
+/* -------------------------------------------------------
+   HEALTH / ROOT
+------------------------------------------------------- */
+
 app.get("/", (req, res) => {
   res.json({
     name: "Snapgram API",
@@ -68,6 +79,10 @@ app.get("/api/health", (req, res) => {
     status: "ok",
   });
 });
+
+/* -------------------------------------------------------
+   ROUTES
+------------------------------------------------------- */
 
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
@@ -86,15 +101,35 @@ app.use("/api/reels", reelRoutes);
 app.use("/api/likes", likeRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/calls", callRoutes);
-app.use("/api/settings",settingsRoutes);
-
-app.use("/api/verification",verificationRoutes);
+app.use("/api/settings", settingsRoutes);
+app.use("/api/verification", verificationRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
 app.use("/api/live", liveRoutes);
 
+/* -------------------------------------------------------
+   START SERVER
+------------------------------------------------------- */
 
-const PORT = process.env.PORT || 5000;
+async function startServer() {
+  try {
+    console.log("[startup] Connecting to MongoDB...");
 
-server.listen(PORT, () => {
-  console.log(`Snapgram server running on port ${PORT}`);
-});
+    await connectDB();
+
+    console.log("[startup] MongoDB connected successfully");
+
+    initializeSocket(server);
+
+    console.log("[startup] Socket.IO initialized successfully");
+
+    server.listen(PORT, () => {
+      console.log(`Snapgram server running on port ${PORT}`);
+    });
+  } catch (error) {
+    console.error("[startup] Failed to start Snapgram:", error.message);
+
+    process.exit(1);
+  }
+}
+
+startServer();
