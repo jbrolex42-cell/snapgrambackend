@@ -9,9 +9,21 @@ const {
   sendPasswordResetEmail,
 } = require("../services/emailService");
 
-const googleClient = new OAuth2Client(
-  process.env.GOOGLE_CLIENT_ID
-);
+/* =========================================================
+   GOOGLE CONFIGURATION
+========================================================= */
+
+const GOOGLE_CLIENT_ID = String(
+  process.env.GOOGLE_CLIENT_ID || ""
+).trim();
+
+const googleClient = GOOGLE_CLIENT_ID
+  ? new OAuth2Client(GOOGLE_CLIENT_ID)
+  : null;
+
+/* =========================================================
+   HELPERS
+========================================================= */
 
 function publicUser(user) {
   if (!user) {
@@ -66,7 +78,6 @@ async function generateUniqueUsername(base) {
     })
   ) {
     candidate = `${username}${counter}`;
-
     counter += 1;
 
     if (counter > 99999) {
@@ -78,6 +89,61 @@ async function generateUniqueUsername(base) {
   return candidate;
 }
 
+/* =========================================================
+   GOOGLE TOKEN DIAGNOSTICS
+   ---------------------------------------------------------
+   IMPORTANT:
+   This only decodes the JWT payload for debugging.
+
+   It does NOT authenticate the token.
+
+   Real authentication is still performed by:
+   googleClient.verifyIdToken()
+========================================================= */
+
+function decodeGoogleTokenForDiagnostics(idToken) {
+  try {
+    const parts = String(idToken || "").split(".");
+
+    if (parts.length !== 3) {
+      return null;
+    }
+
+    const encodedPayload = parts[1];
+
+    const normalizedPayload =
+      encodedPayload
+        .replace(/-/g, "+")
+        .replace(/_/g, "/");
+
+    const paddedPayload =
+      normalizedPayload +
+      "=".repeat(
+        (4 -
+          (normalizedPayload.length % 4)) %
+          4
+      );
+
+    return JSON.parse(
+      Buffer.from(
+        paddedPayload,
+        "base64"
+      ).toString("utf8")
+    );
+  } catch (error) {
+    console.error(
+      "[GOOGLE] Diagnostic decode failed:",
+      error?.message || error
+    );
+
+    return null;
+  }
+}
+
+/* =========================================================
+   REGISTER
+========================================================= */
+
 async function register(req, res) {
   try {
     const {
@@ -87,23 +153,20 @@ async function register(req, res) {
       name,
       fullName,
       phone,
-    } = req.body;
+    } = req.body || {};
 
-    const cleanUsername = username
-      ?.trim()
-      .toLowerCase();
+    const cleanUsername =
+      username?.trim().toLowerCase();
 
-    const cleanEmail = email
-      ?.trim()
-      .toLowerCase();
+    const cleanEmail =
+      email?.trim().toLowerCase();
 
-    const cleanName = (
-      fullName ||
-      name ||
-      ""
+    const cleanName = String(
+      fullName || name || ""
     ).trim();
 
-    const cleanPhone = phone?.trim() || "";
+    const cleanPhone =
+      phone?.trim() || "";
 
     if (
       !cleanUsername ||
@@ -112,46 +175,45 @@ async function register(req, res) {
     ) {
       return res.status(400).json({
         message:
-          "Username, email and password are required",
+          "Username, email and password are required.",
       });
     }
 
     if (cleanUsername.length < 3) {
       return res.status(400).json({
         message:
-          "Username must contain at least 3 characters",
+          "Username must contain at least 3 characters.",
       });
     }
 
     if (password.length < 6) {
       return res.status(400).json({
         message:
-          "Password must contain at least 6 characters",
+          "Password must contain at least 6 characters.",
       });
     }
 
-    const existingUser = await User.findOne({
-      $or: [
-        {
-          email: cleanEmail,
-        },
-        {
-          username: cleanUsername,
-        },
-      ],
-    });
+    const existingUser =
+      await User.findOne({
+        $or: [
+          {
+            email: cleanEmail,
+          },
+          {
+            username: cleanUsername,
+          },
+        ],
+      });
 
     if (existingUser) {
       return res.status(409).json({
         message:
-          "Username or email already exists",
+          "Username or email already exists.",
       });
     }
 
-    const hashedPassword = await bcrypt.hash(
-      password,
-      12
-    );
+    const hashedPassword =
+      await bcrypt.hash(password, 12);
 
     const user = await User.create({
       username: cleanUsername,
@@ -165,7 +227,7 @@ async function register(req, res) {
 
     return res.status(201).json({
       message:
-        "Account created successfully",
+        "Account created successfully.",
       user: publicUser(user),
     });
   } catch (error) {
@@ -175,10 +237,15 @@ async function register(req, res) {
     );
 
     return res.status(500).json({
-      message: "Registration failed",
+      message:
+        "Registration failed.",
     });
   }
 }
+
+/* =========================================================
+   LOGIN
+========================================================= */
 
 async function login(req, res) {
   try {
@@ -187,7 +254,7 @@ async function login(req, res) {
       phone,
       username,
       password,
-    } = req.body;
+    } = req.body || {};
 
     const cleanEmail =
       email?.trim().toLowerCase() || "";
@@ -200,7 +267,8 @@ async function login(req, res) {
 
     if (!password) {
       return res.status(400).json({
-        message: "Password is required",
+        message:
+          "Password is required.",
       });
     }
 
@@ -211,7 +279,7 @@ async function login(req, res) {
     ) {
       return res.status(400).json({
         message:
-          "Email, username, or phone number is required",
+          "Email, username, or phone number is required.",
       });
     }
 
@@ -235,14 +303,15 @@ async function login(req, res) {
       });
     }
 
-    const user = await User.findOne({
-      $or: conditions,
-    }).select("+password");
+    const user =
+      await User.findOne({
+        $or: conditions,
+      }).select("+password");
 
     if (!user) {
       return res.status(401).json({
         message:
-          "Invalid email, username, phone number or password",
+          "Invalid email, username, phone number or password.",
       });
     }
 
@@ -262,14 +331,15 @@ async function login(req, res) {
     if (!passwordMatches) {
       return res.status(401).json({
         message:
-          "Invalid email, username, phone number or password",
+          "Invalid email, username, phone number or password.",
       });
     }
 
     const token = createToken(user);
 
     return res.status(200).json({
-      message: "Login successful",
+      message:
+        "Login successful.",
       token,
       user: publicUser(user),
     });
@@ -280,38 +350,109 @@ async function login(req, res) {
     );
 
     return res.status(500).json({
-      message: "Login failed",
+      message:
+        "Login failed.",
     });
   }
 }
 
+/* =========================================================
+   GOOGLE LOGIN
+========================================================= */
+
 async function googleLogin(req, res) {
   try {
-    const { idToken } = req.body;
+    const { idToken } = req.body || {};
+
+    /* -------------------------------------------------------
+       Validate request
+    ------------------------------------------------------- */
 
     if (!idToken) {
       return res.status(400).json({
         message:
-          "Google ID token is required",
+          "Google ID token is required.",
       });
     }
 
-    if (!process.env.GOOGLE_CLIENT_ID) {
+    /* -------------------------------------------------------
+       Validate server configuration
+    ------------------------------------------------------- */
+
+    if (
+      !GOOGLE_CLIENT_ID ||
+      !googleClient
+    ) {
       console.error(
-        "GOOGLE_CLIENT_ID is missing"
+        "[GOOGLE] GOOGLE_CLIENT_ID is missing on the server."
       );
 
       return res.status(500).json({
         message:
-          "Google login is not configured on the server",
+          "Google login is not configured on the server.",
       });
     }
+
+    /* -------------------------------------------------------
+       Google diagnostics
+       -------------------------------------------------------
+       This happens BEFORE verifyIdToken() so we can see
+       exactly which audience Google placed inside the token.
+    ------------------------------------------------------- */
+
+    console.log(
+      "[GOOGLE] Verifying Google ID token..."
+    );
+
+    console.log(
+      "[GOOGLE] Expected audience:",
+      GOOGLE_CLIENT_ID
+    );
+
+    const diagnosticPayload =
+      decodeGoogleTokenForDiagnostics(
+        idToken
+      );
+
+    console.log(
+      "[GOOGLE] ACTUAL TOKEN AUDIENCE:",
+      diagnosticPayload?.aud ||
+        "NOT FOUND"
+    );
+
+    console.log(
+      "[GOOGLE] TOKEN ISSUER:",
+      diagnosticPayload?.iss ||
+        "NOT FOUND"
+    );
+
+    console.log(
+      "[GOOGLE] TOKEN AUTHORIZED PARTY:",
+      diagnosticPayload?.azp ||
+        "NOT FOUND"
+    );
+
+    console.log(
+      "[GOOGLE] AUDIENCE TYPE:",
+      typeof diagnosticPayload?.aud
+    );
+
+    console.log(
+      "[GOOGLE] AUDIENCE MATCH:",
+      String(
+        diagnosticPayload?.aud
+      ) ===
+        String(GOOGLE_CLIENT_ID)
+    );
+
+    /* -------------------------------------------------------
+       REAL GOOGLE TOKEN VERIFICATION
+    ------------------------------------------------------- */
 
     const ticket =
       await googleClient.verifyIdToken({
         idToken,
-        audience:
-          process.env.GOOGLE_CLIENT_ID,
+        audience: GOOGLE_CLIENT_ID,
       });
 
     const payload =
@@ -320,15 +461,44 @@ async function googleLogin(req, res) {
     if (!payload) {
       return res.status(401).json({
         message:
-          "Invalid Google token",
+          "Invalid Google token.",
       });
     }
 
-    const googleId = payload.sub;
+    /* -------------------------------------------------------
+       Extra audience verification
+    ------------------------------------------------------- */
 
-    const email = payload.email
-      ?.trim()
-      .toLowerCase();
+    console.log(
+      "[GOOGLE] Verified token audience:",
+      payload.aud
+    );
+
+    if (
+      String(payload.aud) !==
+      String(GOOGLE_CLIENT_ID)
+    ) {
+      console.error(
+        "[GOOGLE] Audience mismatch after verification."
+      );
+
+      return res.status(401).json({
+        message:
+          "Google token audience does not match Snapgram's configured Google client.",
+      });
+    }
+
+    /* -------------------------------------------------------
+       Extract Google account information
+    ------------------------------------------------------- */
+
+    const googleId =
+      payload.sub;
+
+    const email =
+      payload.email
+        ?.trim()
+        .toLowerCase();
 
     const emailVerified =
       payload.email_verified;
@@ -344,86 +514,151 @@ async function googleLogin(req, res) {
     if (!googleId || !email) {
       return res.status(400).json({
         message:
-          "Google account information is incomplete",
+          "Google account information is incomplete.",
       });
     }
 
     if (!emailVerified) {
       return res.status(401).json({
         message:
-          "Your Google email address must be verified",
+          "Your Google email address must be verified.",
       });
     }
 
-    let user = await User.findOne({
-      googleId,
-    });
+    /* -------------------------------------------------------
+       Find existing user by Google ID
+    ------------------------------------------------------- */
+
+    let user =
+      await User.findOne({
+        googleId,
+      });
+
+    /* -------------------------------------------------------
+       If not found, try email
+       This connects an existing Snapgram account.
+    ------------------------------------------------------- */
 
     if (!user) {
-      user = await User.findOne({
-        email,
-      });
+      user =
+        await User.findOne({
+          email,
+        });
     }
 
-    if (user) {
-      user.googleId = googleId;
+    /* -------------------------------------------------------
+       Existing user
+    ------------------------------------------------------- */
 
-      if (!user.fullName && fullName) {
-        user.fullName = fullName;
+    if (user) {
+      user.googleId =
+        googleId;
+
+      if (
+        !user.fullName &&
+        fullName
+      ) {
+        user.fullName =
+          fullName;
       }
 
-      if (!user.avatar && avatar) {
-        user.avatar = avatar;
+      if (
+        !user.avatar &&
+        avatar
+      ) {
+        user.avatar =
+          avatar;
+      }
+
+      if (!user.authProvider) {
+        user.authProvider =
+          "google";
       }
 
       await user.save();
-    } else {
+    }
+
+    /* -------------------------------------------------------
+       New user
+    ------------------------------------------------------- */
+
+    else {
       const username =
         await generateUniqueUsername(
           payload.given_name ||
             email.split("@")[0]
         );
 
-      user = await User.create({
-        username,
-        email,
-        password: null,
-        fullName,
-        avatar,
-        googleId,
-        authProvider: "google",
-      });
+      user =
+        await User.create({
+          username,
+          email,
+          password: null,
+          fullName,
+          avatar,
+          googleId,
+          authProvider:
+            "google",
+        });
     }
 
-    const token = createToken(user);
+    /* -------------------------------------------------------
+       Create Snapgram JWT
+    ------------------------------------------------------- */
+
+    const token =
+      createToken(user);
+
+    console.log(
+      "[GOOGLE] Login successful:",
+      user._id.toString()
+    );
 
     return res.status(200).json({
       message:
-        "Google login successful",
+        "Google login successful.",
       token,
       user: publicUser(user),
     });
   } catch (error) {
     console.error(
-      "GOOGLE LOGIN ERROR:",
-      error
+      "[GOOGLE] LOGIN ERROR:",
+      error?.message ||
+        error
     );
+
+    if (
+      error?.message?.includes(
+        "Wrong recipient"
+      )
+    ) {
+      return res.status(401).json({
+        message:
+          "Google login configuration mismatch. The Google ID token audience does not match the Google client configured on Snapgram's backend.",
+      });
+    }
 
     return res.status(401).json({
       message:
-        "Google authentication failed",
+        "Google authentication failed.",
     });
   }
 }
 
+/* =========================================================
+   FACEBOOK LOGIN
+========================================================= */
+
 async function facebookLogin(req, res) {
   try {
-    const { accessToken } = req.body;
+    const {
+      accessToken,
+    } = req.body || {};
 
     if (!accessToken) {
       return res.status(400).json({
         message:
-          "Facebook access token is required",
+          "Facebook access token is required.",
       });
     }
 
@@ -435,24 +670,29 @@ async function facebookLogin(req, res) {
 
     if (!appId || !appSecret) {
       console.error(
-        "Facebook environment variables are missing"
+        "Facebook environment variables are missing."
       );
 
       return res.status(500).json({
         message:
-          "Facebook login is not configured on the server",
+          "Facebook login is not configured on the server.",
       });
     }
 
     const appAccessToken =
       `${appId}|${appSecret}`;
 
+    /* -------------------------------------------------------
+       Validate Facebook access token
+    ------------------------------------------------------- */
+
     const debugResponse =
       await axios.get(
         "https://graph.facebook.com/debug_token",
         {
           params: {
-            input_token: accessToken,
+            input_token:
+              accessToken,
             access_token:
               appAccessToken,
           },
@@ -468,7 +708,7 @@ async function facebookLogin(req, res) {
     ) {
       return res.status(401).json({
         message:
-          "Invalid Facebook access token",
+          "Invalid Facebook access token.",
       });
     }
 
@@ -478,9 +718,13 @@ async function facebookLogin(req, res) {
     ) {
       return res.status(401).json({
         message:
-          "Facebook token belongs to another application",
+          "Facebook token belongs to another application.",
       });
     }
+
+    /* -------------------------------------------------------
+       Get Facebook profile
+    ------------------------------------------------------- */
 
     const profileResponse =
       await axios.get(
@@ -516,7 +760,7 @@ async function facebookLogin(req, res) {
     if (!facebookId) {
       return res.status(401).json({
         message:
-          "Facebook account ID was not returned",
+          "Facebook account ID was not returned.",
       });
     }
 
@@ -527,10 +771,18 @@ async function facebookLogin(req, res) {
       });
     }
 
+    /* -------------------------------------------------------
+       Find existing Facebook account
+    ------------------------------------------------------- */
+
     let user =
       await User.findOne({
         facebookId,
       });
+
+    /* -------------------------------------------------------
+       Fall back to email
+    ------------------------------------------------------- */
 
     if (!user) {
       user =
@@ -538,6 +790,10 @@ async function facebookLogin(req, res) {
           email,
         });
     }
+
+    /* -------------------------------------------------------
+       Existing user
+    ------------------------------------------------------- */
 
     if (user) {
       user.facebookId =
@@ -559,8 +815,19 @@ async function facebookLogin(req, res) {
           avatar;
       }
 
+      if (!user.authProvider) {
+        user.authProvider =
+          "facebook";
+      }
+
       await user.save();
-    } else {
+    }
+
+    /* -------------------------------------------------------
+       New user
+    ------------------------------------------------------- */
+
+    else {
       const username =
         await generateUniqueUsername(
           fullName ||
@@ -580,28 +847,37 @@ async function facebookLogin(req, res) {
         });
     }
 
+    /* -------------------------------------------------------
+       Create Snapgram JWT
+    ------------------------------------------------------- */
+
     const token =
       createToken(user);
 
     return res.status(200).json({
       message:
-        "Facebook login successful",
+        "Facebook login successful.",
       token,
       user: publicUser(user),
     });
   } catch (error) {
     console.error(
       "FACEBOOK LOGIN ERROR:",
-      error.response?.data ||
+      error?.response?.data ||
+        error?.message ||
         error
     );
 
     return res.status(401).json({
       message:
-        "Facebook authentication failed",
+        "Facebook authentication failed.",
     });
   }
 }
+
+/* =========================================================
+   GET CURRENT USER
+========================================================= */
 
 async function getMe(req, res) {
   try {
@@ -612,7 +888,8 @@ async function getMe(req, res) {
 
     if (!userId) {
       return res.status(401).json({
-        message: "Unauthorized",
+        message:
+          "Unauthorized.",
       });
     }
 
@@ -621,7 +898,8 @@ async function getMe(req, res) {
 
     if (!user) {
       return res.status(404).json({
-        message: "User not found",
+        message:
+          "User not found.",
       });
     }
 
@@ -636,10 +914,14 @@ async function getMe(req, res) {
 
     return res.status(500).json({
       message:
-        "Unable to get current user",
+        "Unable to get current user.",
     });
   }
 }
+
+/* =========================================================
+   FORGOT PASSWORD
+========================================================= */
 
 async function forgotPassword(req, res) {
   try {
@@ -655,6 +937,11 @@ async function forgotPassword(req, res) {
           "Email address is required.",
       });
     }
+
+    /*
+     * Always return the same response so
+     * accounts cannot be discovered.
+     */
 
     const genericResponse = {
       message:
@@ -673,9 +960,9 @@ async function forgotPassword(req, res) {
     }
 
     const resetToken =
-      crypto.randomBytes(32).toString(
-        "hex"
-      );
+      crypto
+        .randomBytes(32)
+        .toString("hex");
 
     const resetTokenHash =
       crypto
@@ -699,12 +986,10 @@ async function forgotPassword(req, res) {
 
     await sendPasswordResetEmail({
       email: user.email,
-
       username:
         user.username ||
         user.fullName ||
         "there",
-
       resetToken,
     });
 
@@ -723,6 +1008,10 @@ async function forgotPassword(req, res) {
     });
   }
 }
+
+/* =========================================================
+   RESET PASSWORD
+========================================================= */
 
 async function resetPassword(req, res) {
   try {
@@ -765,7 +1054,6 @@ async function resetPassword(req, res) {
       await User.findOne({
         passwordResetToken:
           tokenHash,
-
         passwordResetExpires: {
           $gt: new Date(),
         },
@@ -794,7 +1082,8 @@ async function resetPassword(req, res) {
       undefined;
 
     if (!user.authProvider) {
-      user.authProvider = "local";
+      user.authProvider =
+        "local";
     }
 
     await user.save();
@@ -815,6 +1104,10 @@ async function resetPassword(req, res) {
     });
   }
 }
+
+/* =========================================================
+   EXPORTS
+========================================================= */
 
 module.exports = {
   register,
