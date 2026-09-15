@@ -133,6 +133,17 @@ const userSchema = new mongoose.Schema(
       default: false,
     },
 
+    isDeactivated: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    deactivatedAt: {
+      type: Date,
+      default: null,
+    },
+
     closeFriends: [
       {
         type: mongoose.Schema.Types.ObjectId,

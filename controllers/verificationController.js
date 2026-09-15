@@ -1,430 +1,707 @@
 const User = require("../models/User");
 const VerificationRequest = require("../models/VerificationRequest");
 
+/* =========================================================
+   HELPERS
+========================================================= */
+
+function getFullName(user) {
+  return (
+    String(
+      user?.fullName ||
+        user?.username ||
+        ""
+    ).trim()
+  );
+}
+
+function cleanString(value) {
+  return typeof value === "string"
+    ? value.trim()
+    : "";
+}
+
+/* =========================================================
+   APPLY FOR VERIFICATION
+========================================================= */
+
 async function applyForVerification(req, res) {
-try {
-const user = await User.findById(req.user._id);
+  try {
+    const user = await User.findById(
+      req.user._id
+    );
 
-if (!user) {
-  return res.status(404).json({
-    message: "User not found",
-  });
-}
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found.",
+      });
+    }
 
-if (user.isVerified === true) {
-  return res.status(400).json({
-    message: "Your account is already verified",
-    status: "approved",
-    isVerified: true,
-  });
-}
+    /* -------------------------------------------------------
+       Already verified
+    ------------------------------------------------------- */
 
-const existingRequest = await VerificationRequest.findOne({
-  user: user._id,
-});
+    if (user.isVerified === true) {
+      return res.status(400).json({
+        message:
+          "Your account is already verified.",
+        status: "approved",
+        isVerified: true,
+      });
+    }
 
-if (
-  existingRequest &&
-  existingRequest.status === "pending"
-) {
-  if (user.verificationStatus !== "pending") {
-    user.verificationStatus = "pending";
+    /* -------------------------------------------------------
+       Existing request
+    ------------------------------------------------------- */
+
+    const existingRequest =
+      await VerificationRequest.findOne({
+        user: user._id,
+      });
+
+    /* -------------------------------------------------------
+       Pending request
+    ------------------------------------------------------- */
+
+    if (
+      existingRequest &&
+      existingRequest.status === "pending"
+    ) {
+      if (
+        user.verificationStatus !==
+        "pending"
+      ) {
+        user.isVerified = false;
+        user.verificationStatus =
+          "pending";
+
+        await user.save();
+      }
+
+      return res.status(400).json({
+        message:
+          "You already have a pending verification request. Please wait for an admin to review it.",
+        status: "pending",
+        isVerified: false,
+        request: {
+          _id: existingRequest._id,
+          status:
+            existingRequest.status,
+          category:
+            existingRequest.category,
+          createdAt:
+            existingRequest.createdAt,
+        },
+      });
+    }
+
+    /* -------------------------------------------------------
+       Approved request
+       Keep User and VerificationRequest synchronized.
+    ------------------------------------------------------- */
+
+    if (
+      existingRequest &&
+      existingRequest.status === "approved"
+    ) {
+      user.isVerified = true;
+      user.verificationStatus =
+        "approved";
+
+      await user.save();
+
+      return res.status(400).json({
+        message:
+          "Your account is already verified.",
+        status: "approved",
+        isVerified: true,
+      });
+    }
+
+    /* -------------------------------------------------------
+       Validate application
+    ------------------------------------------------------- */
+
+    const category = cleanString(
+      req.body?.category
+    );
+
+    const reason = cleanString(
+      req.body?.reason
+    );
+
+    const website = cleanString(
+      req.body?.website
+    );
+
+    if (!category) {
+      return res.status(400).json({
+        message:
+          "Verification category is required.",
+      });
+    }
+
+    if (category.length > 100) {
+      return res.status(400).json({
+        message:
+          "Verification category cannot exceed 100 characters.",
+      });
+    }
+
+    if (!reason) {
+      return res.status(400).json({
+        message:
+          "Please explain why you are requesting verification.",
+      });
+    }
+
+    if (reason.length > 2000) {
+      return res.status(400).json({
+        message:
+          "Verification reason cannot exceed 2000 characters.",
+      });
+    }
+
+    if (website.length > 300) {
+      return res.status(400).json({
+        message:
+          "Website cannot exceed 300 characters.",
+      });
+    }
+
+    /* -------------------------------------------------------
+       Correct User field:
+       fullName, NOT name
+    ------------------------------------------------------- */
+
+    const fullName =
+      getFullName(user);
+
+    /* -------------------------------------------------------
+       Resubmit previously rejected request
+    ------------------------------------------------------- */
+
+    if (
+      existingRequest &&
+      existingRequest.status === "rejected"
+    ) {
+      existingRequest.fullName =
+        fullName;
+
+      existingRequest.username =
+        user.username;
+
+      existingRequest.category =
+        category;
+
+      existingRequest.reason =
+        reason;
+
+      existingRequest.website =
+        website;
+
+      existingRequest.status =
+        "pending";
+
+      existingRequest.reviewedBy =
+        null;
+
+      existingRequest.reviewedAt =
+        null;
+
+      existingRequest.rejectionReason =
+        "";
+
+      await existingRequest.save();
+
+      user.isVerified = false;
+      user.verificationStatus =
+        "pending";
+
+      await user.save();
+
+      return res.status(201).json({
+        message:
+          "Your verification request has been resubmitted successfully. Please wait for an admin to review your application.",
+        status: "pending",
+        isVerified: false,
+        request: {
+          _id:
+            existingRequest._id,
+          status:
+            existingRequest.status,
+          category:
+            existingRequest.category,
+          createdAt:
+            existingRequest.createdAt,
+        },
+      });
+    }
+
+    /* -------------------------------------------------------
+       Create new request
+    ------------------------------------------------------- */
+
+    const request =
+      await VerificationRequest.create({
+        user: user._id,
+        fullName,
+        username: user.username,
+        category,
+        reason,
+        website,
+        status: "pending",
+      });
+
+    /* -------------------------------------------------------
+       Synchronize User
+    ------------------------------------------------------- */
+
+    user.isVerified = false;
+    user.verificationStatus =
+      "pending";
+
     await user.save();
-  }
 
-  return res.status(400).json({
-    message:
-      "You already have a pending verification request. Please wait for an admin to review it.",
-    status: "pending",
-    isVerified: false,
-    request: {
-      _id: existingRequest._id,
-      status: existingRequest.status,
-      category: existingRequest.category,
-      createdAt: existingRequest.createdAt,
-    },
-  });
-}
-
-if (
-  existingRequest &&
-  existingRequest.status === "approved"
-) {
-  user.isVerified = true;
-  user.verificationStatus = "approved";
-
-  await user.save();
-
-  return res.status(400).json({
-    message: "Your account is already verified.",
-    status: "approved",
-    isVerified: true,
-  });
-}
-
-const category =
-  typeof req.body.category === "string"
-    ? req.body.category.trim()
-    : "";
-
-const reason =
-  typeof req.body.reason === "string"
-    ? req.body.reason.trim()
-    : "";
-
-const website =
-  typeof req.body.website === "string"
-    ? req.body.website.trim()
-    : "";
-
-if (!category) {
-  return res.status(400).json({
-    message: "Verification category is required",
-  });
-}
-
-if (!reason) {
-  return res.status(400).json({
-    message:
-      "Please explain why you are requesting verification",
-  });
-}
-
-let request = existingRequest;
-
-if (
-  request &&
-  request.status === "rejected"
-) {
-  request.fullName =
-    user.name || user.username;
-
-  request.username = user.username;
-  request.category = category;
-  request.reason = reason;
-  request.website = website;
-  request.status = "pending";
-  request.reviewedBy = null;
-  request.reviewedAt = null;
-  request.rejectionReason = "";
-
-  await request.save();
-}
-
-if (!request) {
-  request = await VerificationRequest.create({
-    user: user._id,
-    fullName: user.name || user.username,
-    username: user.username,
-    category,
-    reason,
-    website,
-    status: "pending",
-  });
-}
-
-user.isVerified = false;
-user.verificationStatus = "pending";
-
-await user.save();
-
-return res.status(201).json({
-  message:
-    "Verification request submitted successfully. Please wait for an admin to review your application.",
-  status: "pending",
-  isVerified: false,
-  request: {
-    _id: request._id,
-    status: request.status,
-    category: request.category,
-    createdAt: request.createdAt,
-  },
-});
-
-} catch (error) {
-console.error(
-"APPLY VERIFICATION ERROR:",
-error
-);
-
-if (error.code === 11000) {
-  return res.status(400).json({
-    message:
-      "You already have a verification request. Please wait for the current request to be reviewed.",
-    status: "pending",
-  });
-}
-
-return res.status(500).json({
-  message:
-    "Unable to submit verification request",
-});
-
-}
-}
-
-
-async function getVerificationStatus(req, res) {
-try {
-const user = await User.findById(
-req.user._id
-).select(
-"name username avatar isVerified verificationStatus"
-);
-
-
-if (!user) {
-  return res.status(404).json({
-    message: "User not found",
-  });
-}
-
-const request =
-  await VerificationRequest.findOne({
-    user: user._id,
-  }).lean();
-
-let status =
-  user.verificationStatus || "none";
-
-if (request) {
-  status = request.status;
-}
-
-if (
-  request &&
-  request.status === "approved" &&
-  !user.isVerified
-) {
-  user.isVerified = true;
-  user.verificationStatus = "approved";
-
-  await user.save();
-}
-
-if (
-  request &&
-  request.status === "pending" &&
-  user.verificationStatus !== "pending"
-) {
-  user.isVerified = false;
-  user.verificationStatus = "pending";
-
-  await user.save();
-}
-
-if (
-  request &&
-  request.status === "rejected" &&
-  user.verificationStatus !== "rejected"
-) {
-  user.isVerified = false;
-  user.verificationStatus = "rejected";
-
-  await user.save();
-}
-
-return res.json({
-  isVerified: Boolean(user.isVerified),
-  status,
-  user: {
-    name: user.name,
-    username: user.username,
-    avatar: user.avatar,
-  },
-  request: request || null,
-});
-
-} catch (error) {
-console.error(
-"GET VERIFICATION STATUS ERROR:",
-error
-);
-
-return res.status(500).json({
-  message:
-    "Unable to load verification status",
-});
-
-}
-}
-
-async function getPendingVerifications(req, res) {
-try {
-if (!req.user.isAdmin) {
-return res.status(403).json({
-message: "Admin access required",
-});
-}
-
-const requests =
-  await VerificationRequest.find({
-    status: "pending",
-  })
-    .populate(
-      "user",
-      "username fullName avatar isVerified verificationStatus"
-    )
-    .sort({
-      createdAt: -1,
+    return res.status(201).json({
+      message:
+        "Verification request submitted successfully. Please wait for an admin to review your application.",
+      status: "pending",
+      isVerified: false,
+      request: {
+        _id: request._id,
+        status: request.status,
+        category: request.category,
+        createdAt: request.createdAt,
+      },
     });
+  } catch (error) {
+    console.error(
+      "APPLY VERIFICATION ERROR:",
+      error
+    );
 
-return res.json({
-  requests,
-});
+    if (error?.code === 11000) {
+      return res.status(400).json({
+        message:
+          "You already have a verification request. Please wait for the current request to be reviewed.",
+        status: "pending",
+      });
+    }
 
-} catch (error) {
-console.error(
-"GET PENDING VERIFICATIONS ERROR:",
-error
-);
-
-return res.status(500).json({
-  message:
-    "Unable to load verification requests",
-});
-
-}
-}
-
-
-async function approveVerification(req, res) {
-try {
-if (!req.user.isAdmin) {
-return res.status(403).json({
-message: "Admin access required",
-});
-}
-
-const request =
-  await VerificationRequest.findById(
-    req.params.requestId
-  );
-
-if (!request) {
-  return res.status(404).json({
-    message:
-      "Verification request not found",
-  });
-}
-
-if (request.status !== "pending") {
-  return res.status(400).json({
-    message:
-      `This verification request has already been ${request.status}.`,
-    status: request.status,
-  });
-}
-
-request.status = "approved";
-request.reviewedBy = req.user._id;
-request.reviewedAt = new Date();
-request.rejectionReason = "";
-
-await request.save();
-
-await User.findByIdAndUpdate(
-  request.user,
-  {
-    isVerified: true,
-    verificationStatus: "approved",
+    return res.status(500).json({
+      message:
+        "Unable to submit verification request.",
+    });
   }
-);
-
-return res.json({
-  message:
-    "User verified successfully",
-  isVerified: true,
-  status: "approved",
-});
-
-} catch (error) {
-console.error(
-"APPROVE VERIFICATION ERROR:",
-error
-);
-
-return res.status(500).json({
-  message:
-    "Unable to approve verification",
-});
-
-}
 }
 
-async function rejectVerification(req, res) {
-try {
-if (!req.user.isAdmin) {
-return res.status(403).json({
-message: "Admin access required",
-});
-}
+/* =========================================================
+   GET VERIFICATION STATUS
+========================================================= */
 
-const request =
-  await VerificationRequest.findById(
-    req.params.requestId
-  );
+async function getVerificationStatus(
+  req,
+  res
+) {
+  try {
+    const user =
+      await User.findById(
+        req.user._id
+      ).select(
+        "fullName username avatar isVerified verificationStatus"
+      );
 
-if (!request) {
-  return res.status(404).json({
-    message:
-      "Verification request not found",
-  });
-}
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found.",
+      });
+    }
 
-if (request.status !== "pending") {
-  return res.status(400).json({
-    message:
-      `This verification request has already been ${request.status}.`,
-    status: request.status,
-  });
-}
+    const request =
+      await VerificationRequest.findOne({
+        user: user._id,
+      }).lean();
 
-const reason =
-  typeof req.body.reason === "string"
-    ? req.body.reason.trim()
-    : "";
+    let status =
+      user.verificationStatus ||
+      "none";
 
-request.status = "rejected";
-request.reviewedBy = req.user._id;
-request.reviewedAt = new Date();
-request.rejectionReason = reason;
+    /* -------------------------------------------------------
+       Request is the source of truth when it exists
+    ------------------------------------------------------- */
 
-await request.save();
+    if (request) {
+      status =
+        request.status;
+    }
 
-await User.findByIdAndUpdate(
-  request.user,
-  {
-    isVerified: false,
-    verificationStatus: "rejected",
+    /* -------------------------------------------------------
+       Synchronize User with request
+    ------------------------------------------------------- */
+
+    if (
+      request?.status ===
+        "approved" &&
+      (
+        !user.isVerified ||
+        user.verificationStatus !==
+          "approved"
+      )
+    ) {
+      user.isVerified = true;
+      user.verificationStatus =
+        "approved";
+
+      await user.save();
+    }
+
+    if (
+      request?.status ===
+        "pending" &&
+      (
+        user.isVerified ||
+        user.verificationStatus !==
+          "pending"
+      )
+    ) {
+      user.isVerified = false;
+      user.verificationStatus =
+        "pending";
+
+      await user.save();
+    }
+
+    if (
+      request?.status ===
+        "rejected" &&
+      (
+        user.isVerified ||
+        user.verificationStatus !==
+          "rejected"
+      )
+    ) {
+      user.isVerified = false;
+      user.verificationStatus =
+        "rejected";
+
+      await user.save();
+    }
+
+    /* -------------------------------------------------------
+       IMPORTANT:
+       User model uses fullName, not name.
+    ------------------------------------------------------- */
+
+    return res.status(200).json({
+      isVerified:
+        Boolean(user.isVerified),
+
+      status,
+
+      user: {
+        fullName:
+          user.fullName ||
+          user.username ||
+          "",
+
+        username:
+          user.username || "",
+
+        avatar:
+          user.avatar || "",
+      },
+
+      request:
+        request || null,
+    });
+  } catch (error) {
+    console.error(
+      "GET VERIFICATION STATUS ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      message:
+        "Unable to load verification status.",
+    });
   }
-);
-
-return res.json({
-  message:
-    "Verification request rejected",
-  isVerified: false,
-  status: "rejected",
-});
-
-} catch (error) {
-console.error(
-"REJECT VERIFICATION ERROR:",
-error
-);
-
-return res.status(500).json({
-  message:
-    "Unable to reject verification",
-});
-
 }
+
+/* =========================================================
+   GET PENDING VERIFICATIONS
+   ADMIN ONLY
+========================================================= */
+
+async function getPendingVerifications(
+  req,
+  res
+) {
+  try {
+    if (!req.user?.isAdmin) {
+      return res.status(403).json({
+        message:
+          "Admin access required.",
+      });
+    }
+
+    const requests =
+      await VerificationRequest.find({
+        status: "pending",
+      })
+        .populate(
+          "user",
+          "username fullName avatar isVerified verificationStatus"
+        )
+        .sort({
+          createdAt: -1,
+        });
+
+    return res.status(200).json({
+      requests,
+    });
+  } catch (error) {
+    console.error(
+      "GET PENDING VERIFICATIONS ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      message:
+        "Unable to load verification requests.",
+    });
+  }
 }
+
+/* =========================================================
+   APPROVE VERIFICATION
+   ADMIN ONLY
+========================================================= */
+
+async function approveVerification(
+  req,
+  res
+) {
+  try {
+    if (!req.user?.isAdmin) {
+      return res.status(403).json({
+        message:
+          "Admin access required.",
+      });
+    }
+
+    const request =
+      await VerificationRequest.findById(
+        req.params.requestId
+      );
+
+    if (!request) {
+      return res.status(404).json({
+        message:
+          "Verification request not found.",
+      });
+    }
+
+    if (
+      request.status !== "pending"
+    ) {
+      return res.status(400).json({
+        message:
+          `This verification request has already been ${request.status}.`,
+        status:
+          request.status,
+      });
+    }
+
+    request.status =
+      "approved";
+
+    request.reviewedBy =
+      req.user._id;
+
+    request.reviewedAt =
+      new Date();
+
+    request.rejectionReason =
+      "";
+
+    await request.save();
+
+    const user =
+      await User.findByIdAndUpdate(
+        request.user,
+        {
+          isVerified: true,
+          verificationStatus:
+            "approved",
+        },
+        {
+          new: true,
+        }
+      ).select(
+        "fullName username avatar isVerified verificationStatus"
+      );
+
+    if (!user) {
+      return res.status(404).json({
+        message:
+          "The user associated with this verification request no longer exists.",
+      });
+    }
+
+    return res.status(200).json({
+      message:
+        "User verified successfully.",
+      isVerified: true,
+      status: "approved",
+      user: {
+        fullName:
+          user.fullName ||
+          user.username ||
+          "",
+        username:
+          user.username,
+        avatar:
+          user.avatar || "",
+      },
+    });
+  } catch (error) {
+    console.error(
+      "APPROVE VERIFICATION ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      message:
+        "Unable to approve verification.",
+    });
+  }
+}
+
+/* =========================================================
+   REJECT VERIFICATION
+   ADMIN ONLY
+========================================================= */
+
+async function rejectVerification(
+  req,
+  res
+) {
+  try {
+    if (!req.user?.isAdmin) {
+      return res.status(403).json({
+        message:
+          "Admin access required.",
+      });
+    }
+
+    const request =
+      await VerificationRequest.findById(
+        req.params.requestId
+      );
+
+    if (!request) {
+      return res.status(404).json({
+        message:
+          "Verification request not found.",
+      });
+    }
+
+    if (
+      request.status !== "pending"
+    ) {
+      return res.status(400).json({
+        message:
+          `This verification request has already been ${request.status}.`,
+        status:
+          request.status,
+      });
+    }
+
+    const reason = cleanString(
+      req.body?.reason
+    );
+
+    if (reason.length > 1000) {
+      return res.status(400).json({
+        message:
+          "Rejection reason cannot exceed 1000 characters.",
+      });
+    }
+
+    request.status =
+      "rejected";
+
+    request.reviewedBy =
+      req.user._id;
+
+    request.reviewedAt =
+      new Date();
+
+    request.rejectionReason =
+      reason;
+
+    await request.save();
+
+    const user =
+      await User.findByIdAndUpdate(
+        request.user,
+        {
+          isVerified: false,
+          verificationStatus:
+            "rejected",
+        },
+        {
+          new: true,
+        }
+      ).select(
+        "fullName username avatar isVerified verificationStatus"
+      );
+
+    if (!user) {
+      return res.status(404).json({
+        message:
+          "The user associated with this verification request no longer exists.",
+      });
+    }
+
+    return res.status(200).json({
+      message:
+        "Verification request rejected.",
+      isVerified: false,
+      status: "rejected",
+      user: {
+        fullName:
+          user.fullName ||
+          user.username ||
+          "",
+        username:
+          user.username,
+        avatar:
+          user.avatar || "",
+      },
+    });
+  } catch (error) {
+    console.error(
+      "REJECT VERIFICATION ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      message:
+        "Unable to reject verification.",
+    });
+  }
+}
+
+/* =========================================================
+   EXPORTS
+========================================================= */
 
 module.exports = {
-applyForVerification,
-getVerificationStatus,
-getPendingVerifications,
-approveVerification,
-rejectVerification,
+  applyForVerification,
+  getVerificationStatus,
+  getPendingVerifications,
+  approveVerification,
+  rejectVerification,
 };

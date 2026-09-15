@@ -2,11 +2,12 @@ const jwt = require("jsonwebtoken");
 const mongoose = require("mongoose");
 
 const User = require("../models/User");
+const UserSession = require("../models/UserSession");
 
 async function protect(req, res, next) {
   try {
-
-    const authorization = req.headers.authorization;
+    const authorization =
+      req.headers.authorization;
 
     if (
       !authorization ||
@@ -54,18 +55,15 @@ async function protect(req, res, next) {
     if (
       !mongoose.Types.ObjectId.isValid(userId)
     ) {
-      console.error(
-        "AUTH MIDDLEWARE ERROR: Invalid user ID in JWT:",
-        userId
-      );
-
       return res.status(401).json({
         message:
           "Invalid user identity in token",
       });
     }
 
-    const user = await User.findById(userId);
+    const user = await User.findById(
+      userId
+    );
 
     if (!user) {
       return res.status(401).json({
@@ -74,7 +72,44 @@ async function protect(req, res, next) {
       });
     }
 
+    if (user.isDeactivated) {
+      return res.status(403).json({
+        message:
+          "This account is deactivated",
+      });
+    }
+
+    /*
+     * New tokens contain sessionId.
+     *
+     * Older tokens without sessionId are
+     * still accepted so existing logged-in
+     * users are not immediately kicked out.
+     */
+    if (decoded.sessionId) {
+      const session =
+        await UserSession.findOne({
+          sessionId: decoded.sessionId,
+          user: user._id,
+          revokedAt: null,
+        });
+
+      if (!session) {
+        return res.status(401).json({
+          message:
+            "This login session has expired or been revoked.",
+        });
+      }
+
+      session.lastSeen = new Date();
+
+      await session.save();
+
+      req.session = session;
+    }
+
     req.user = user;
+    req.userId = user._id;
 
     return next();
   } catch (error) {

@@ -1,5 +1,4 @@
-const express =
-  require("express");
+const express = require("express");
 
 const protect =
   require("../middleware/auth");
@@ -46,5 +45,4 @@ router.post(
   rejectVerification
 );
 
-module.exports =
-  router;
+module.exports = router;

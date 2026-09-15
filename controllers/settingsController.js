@@ -1,59 +1,118 @@
-const User =
-  require("../models/User");
+const User = require("../models/User");
+const UserSettings = require("../models/UserSettings");
 
-const UserSettings =
-  require("../models/UserSettings");
+function cleanSettings(settings) {
+  if (!settings) {
+    return {};
+  }
 
-async function getSettings(
-  req,
-  res
-) {
+  const data = settings.toObject
+    ? settings.toObject()
+    : { ...settings };
+
+  delete data._id;
+  delete data.__v;
+  delete data.user;
+  delete data.createdAt;
+  delete data.updatedAt;
+
+  return data;
+}
+
+function mergeObject(target, source) {
+  if (
+    !source ||
+    typeof source !== "object" ||
+    Array.isArray(source)
+  ) {
+    return;
+  }
+
+  for (const key of Object.keys(source)) {
+    const value = source[key];
+
+    if (
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value)
+    ) {
+      if (
+        !target[key] ||
+        typeof target[key] !== "object"
+      ) {
+        target[key] = {};
+      }
+
+      mergeObject(target[key], value);
+    } else {
+      target[key] = value;
+    }
+  }
+}
+
+async function getOrCreateSettings(userId) {
+  let settings =
+    await UserSettings.findOne({
+      user: userId,
+    });
+
+  if (!settings) {
+    settings =
+      await UserSettings.create({
+        user: userId,
+      });
+  }
+
+  return settings;
+}
+
+async function getSettings(req, res) {
   try {
     const user =
       await User.findById(
         req.user._id
       ).select(
-        "isPrivate closeFriends blockedUsers mutedUsers restrictedUsers isVerified"
+        "isPrivate closeFriends blockedUsers mutedUsers restrictedUsers isVerified verificationStatus"
       );
 
     if (!user) {
       return res.status(404).json({
-        message:
-          "User not found",
+        message: "User not found",
       });
     }
 
-    let settings =
-      await UserSettings.findOne({
-        user: user._id,
-      });
+    const settings =
+      await getOrCreateSettings(
+        user._id
+      );
 
-    if (!settings) {
-      settings =
-        await UserSettings.create({
-          user: user._id,
-        });
-    }
-
-    res.json({
+    return res.json({
       settings: {
-        isPrivate:
-          user.isPrivate,
+        isPrivate: Boolean(
+          user.isPrivate
+        ),
 
         closeFriends:
-          user.closeFriends,
+          user.closeFriends || [],
 
         blockedUsers:
-          user.blockedUsers,
+          user.blockedUsers || [],
 
         mutedUsers:
-          user.mutedUsers,
+          user.mutedUsers || [],
 
         restrictedUsers:
-          user.restrictedUsers,
+          user.restrictedUsers || [],
+
+        isVerified:
+          Boolean(user.isVerified),
+
+        verificationStatus:
+          user.verificationStatus ||
+          "none",
 
         preferences:
-          settings,
+          cleanSettings(settings),
       },
     });
   } catch (error) {
@@ -62,30 +121,50 @@ async function getSettings(
       error
     );
 
-    res.status(500).json({
+    return res.status(500).json({
       message:
         "Unable to load settings",
     });
   }
 }
 
-async function updateSettings(
-  req,
-  res
-) {
+async function updateSettings(req, res) {
   try {
-    let settings =
-      await UserSettings.findOne({
-        user: req.user._id,
-      });
+    const user =
+      await User.findById(
+        req.user._id
+      );
 
-    if (!settings) {
-      settings =
-        await UserSettings.create({
-          user: req.user._id,
-        });
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+      });
     }
 
+    const settings =
+      await getOrCreateSettings(
+        user._id
+      );
+
+    const body =
+      req.body || {};
+
+    /*
+     * User-level setting
+     */
+    if (
+      body.isPrivate !== undefined
+    ) {
+      user.isPrivate =
+        Boolean(body.isPrivate);
+
+      await user.save();
+    }
+
+    /*
+     * Only these fields can be
+     * persisted into UserSettings.
+     */
     const allowedFields = [
       "dailyReminder",
       "showActivityStatus",
@@ -105,47 +184,63 @@ async function updateSettings(
       "reduceMotion",
       "accessibility",
       "savedLoginInformation",
+      "twoFactorEnabled",
     ];
 
     for (
       const field of allowedFields
     ) {
       if (
-        req.body[field] !==
-        undefined
+        body[field] !== undefined
       ) {
-        settings[field] =
-          req.body[field];
+        const value =
+          body[field];
+
+        if (
+          value &&
+          typeof value === "object" &&
+          !Array.isArray(value)
+        ) {
+          if (
+            !settings[field] ||
+            typeof settings[field] !==
+              "object"
+          ) {
+            settings[field] = {};
+          }
+
+          const current =
+            settings[field].toObject
+              ? settings[field].toObject()
+              : {
+                  ...settings[field],
+                };
+
+          mergeObject(
+            current,
+            value
+          );
+
+          settings[field] =
+            current;
+        } else {
+          settings[field] =
+            value;
+        }
       }
     }
 
     await settings.save();
 
-    let updatedUser =
-      await User.findById(
-        req.user._id
-      );
-
-    if (
-      req.body.isPrivate !==
-      undefined
-    ) {
-      updatedUser.isPrivate =
-        Boolean(
-          req.body.isPrivate
-        );
-
-      await updatedUser.save();
-    }
-
-    res.json({
+    return res.json({
       message:
         "Settings updated successfully",
 
-      settings,
+      settings:
+        cleanSettings(settings),
 
       isPrivate:
-        updatedUser.isPrivate,
+        Boolean(user.isPrivate),
     });
   } catch (error) {
     console.error(
@@ -153,7 +248,7 @@ async function updateSettings(
       error
     );
 
-    res.status(500).json({
+    return res.status(500).json({
       message:
         "Unable to update settings",
     });
@@ -167,7 +262,7 @@ async function addRelationship(
   try {
     const {
       type,
-    } = req.body;
+    } = req.body || {};
 
     const allowedTypes = [
       "closeFriends",
@@ -177,9 +272,7 @@ async function addRelationship(
     ];
 
     if (
-      !allowedTypes.includes(
-        type
-      )
+      !allowedTypes.includes(type)
     ) {
       return res.status(400).json({
         message:
@@ -200,12 +293,8 @@ async function addRelationship(
     }
 
     if (
-      String(
-        targetUser._id
-      ) ===
-      String(
-        req.user._id
-      )
+      String(targetUser._id) ===
+      String(req.user._id)
     ) {
       return res.status(400).json({
         message:
@@ -218,15 +307,27 @@ async function addRelationship(
         req.user._id
       );
 
+    if (!user) {
+      return res.status(404).json({
+        message:
+          "User not found",
+      });
+    }
+
     if (
-      !user[type].some(
+      !Array.isArray(user[type])
+    ) {
+      user[type] = [];
+    }
+
+    const exists =
+      user[type].some(
         (id) =>
           String(id) ===
-          String(
-            targetUser._id
-          )
-      )
-    ) {
+          String(targetUser._id)
+      );
+
+    if (!exists) {
       user[type].push(
         targetUser._id
       );
@@ -234,7 +335,7 @@ async function addRelationship(
       await user.save();
     }
 
-    res.json({
+    return res.json({
       message:
         "Account list updated",
 
@@ -249,7 +350,7 @@ async function addRelationship(
       error
     );
 
-    res.status(500).json({
+    return res.status(500).json({
       message:
         "Unable to update account list",
     });
@@ -263,7 +364,7 @@ async function removeRelationship(
   try {
     const {
       type,
-    } = req.body;
+    } = req.body || {};
 
     const allowedTypes = [
       "closeFriends",
@@ -273,9 +374,7 @@ async function removeRelationship(
     ];
 
     if (
-      !allowedTypes.includes(
-        type
-      )
+      !allowedTypes.includes(type)
     ) {
       return res.status(400).json({
         message:
@@ -296,17 +395,19 @@ async function removeRelationship(
     }
 
     user[type] =
-      user[type].filter(
-        (id) =>
-          String(id) !==
-          String(
-            req.params.userId
+      Array.isArray(user[type])
+        ? user[type].filter(
+            (id) =>
+              String(id) !==
+              String(
+                req.params.userId
+              )
           )
-      );
+        : [];
 
     await user.save();
 
-    res.json({
+    return res.json({
       message:
         "Account list updated",
     });
@@ -316,7 +417,7 @@ async function removeRelationship(
       error
     );
 
-    res.status(500).json({
+    return res.status(500).json({
       message:
         "Unable to update account list",
     });

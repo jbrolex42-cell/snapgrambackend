@@ -5,8 +5,14 @@ const crypto = require("crypto");
 const { OAuth2Client } = require("google-auth-library");
 
 const User = require("../models/User");
+const UserSession = require("../models/UserSession");
+const UserSettings = require("../models/UserSettings");
+const TwoFactorChallenge = require("../models/TwoFactorChallenge");
+const VerificationRequest = require("../models/VerificationRequest");
+
 const {
   sendPasswordResetEmail,
+  sendTwoFactorCode,
 } = require("../services/emailService");
 
 /* =========================================================
@@ -22,7 +28,29 @@ const googleClient = GOOGLE_CLIENT_ID
   : null;
 
 /* =========================================================
-   HELPERS
+   SECURITY HELPERS
+========================================================= */
+
+function generateTwoFactorCode() {
+  return String(crypto.randomInt(100000, 1000000));
+}
+
+function hashValue(value) {
+  return crypto
+    .createHash("sha256")
+    .update(String(value))
+    .digest("hex");
+}
+
+function hashToken(token) {
+  return crypto
+    .createHash("sha256")
+    .update(String(token))
+    .digest("hex");
+}
+
+/* =========================================================
+   PUBLIC USER
 ========================================================= */
 
 function publicUser(user) {
@@ -42,10 +70,91 @@ function publicUser(user) {
   return data;
 }
 
-function createToken(user) {
-  return jwt.sign(
+/* =========================================================
+   DEVICE / SESSION HELPERS
+========================================================= */
+
+function getDeviceName(req) {
+  const userAgent = String(
+    req?.headers?.["user-agent"] || ""
+  );
+
+  if (!userAgent) {
+    return "Unknown device";
+  }
+
+  if (/Android/i.test(userAgent)) {
+    return "Android device";
+  }
+
+  if (/iPhone|iPad|iPod/i.test(userAgent)) {
+    return "iPhone / iPad";
+  }
+
+  if (/Windows/i.test(userAgent)) {
+    return "Windows";
+  }
+
+  if (/Macintosh|Mac OS/i.test(userAgent)) {
+    return "Mac";
+  }
+
+  if (/Linux/i.test(userAgent)) {
+    return "Linux";
+  }
+
+  return "Unknown device";
+}
+
+function getPlatform(req) {
+  const userAgent = String(
+    req?.headers?.["user-agent"] || ""
+  );
+
+  if (/Android/i.test(userAgent)) {
+    return "Android";
+  }
+
+  if (/iPhone|iPad|iPod/i.test(userAgent)) {
+    return "iOS";
+  }
+
+  if (/Windows/i.test(userAgent)) {
+    return "Windows";
+  }
+
+  if (/Macintosh|Mac OS/i.test(userAgent)) {
+    return "macOS";
+  }
+
+  if (/Linux/i.test(userAgent)) {
+    return "Linux";
+  }
+
+  return "Unknown";
+}
+
+/* =========================================================
+   CREATE AUTH TOKEN + SESSION
+========================================================= */
+
+async function createToken(user, req) {
+  if (!user?._id) {
+    throw new Error("Cannot create token without a user.");
+  }
+
+  if (!process.env.JWT_SECRET) {
+    throw new Error("JWT_SECRET is not configured.");
+  }
+
+  const sessionId = crypto.randomUUID();
+  const tokenId = crypto.randomUUID();
+
+  const token = jwt.sign(
     {
       id: user._id,
+      sessionId,
+      jti: tokenId,
     },
     process.env.JWT_SECRET,
     {
@@ -53,7 +162,29 @@ function createToken(user) {
         process.env.JWT_EXPIRES_IN || "7d",
     }
   );
+
+  await UserSession.create({
+    user: user._id,
+    sessionId,
+    tokenId,
+    tokenHash: hashToken(token),
+    deviceName: getDeviceName(req),
+    platform: getPlatform(req),
+    userAgent: String(
+      req?.headers?.["user-agent"] || ""
+    ),
+    ipAddress: req?.ip || "",
+    location: "Unknown location",
+    lastSeen: new Date(),
+    revokedAt: null,
+  });
+
+  return token;
 }
+
+/* =========================================================
+   USERNAME HELPERS
+========================================================= */
 
 function sanitizeUsername(value) {
   return String(value || "")
@@ -91,14 +222,6 @@ async function generateUniqueUsername(base) {
 
 /* =========================================================
    GOOGLE TOKEN DIAGNOSTICS
-   ---------------------------------------------------------
-   IMPORTANT:
-   This only decodes the JWT payload for debugging.
-
-   It does NOT authenticate the token.
-
-   Real authentication is still performed by:
-   googleClient.verifyIdToken()
 ========================================================= */
 
 function decodeGoogleTokenForDiagnostics(idToken) {
@@ -141,6 +264,52 @@ function decodeGoogleTokenForDiagnostics(idToken) {
 }
 
 /* =========================================================
+   CREATE TWO-FACTOR CHALLENGE
+========================================================= */
+
+async function createTwoFactorChallenge(user) {
+  const code = generateTwoFactorCode();
+
+  const challengeToken =
+    crypto.randomBytes(32).toString("hex");
+
+  const codeHash = hashValue(code);
+
+  await TwoFactorChallenge.deleteMany({
+    user: user._id,
+  });
+
+  await TwoFactorChallenge.create({
+    user: user._id,
+    challengeToken,
+    codeHash,
+    attempts: 0,
+    expiresAt: new Date(
+      Date.now() + 10 * 60 * 1000
+    ),
+  });
+
+  try {
+    await sendTwoFactorCode({
+      email: user.email,
+      username:
+        user.fullName ||
+        user.username ||
+        "there",
+      code,
+    });
+  } catch (error) {
+    await TwoFactorChallenge.deleteMany({
+      user: user._id,
+    });
+
+    throw error;
+  }
+
+  return challengeToken;
+}
+
+/* =========================================================
    REGISTER
 ========================================================= */
 
@@ -156,17 +325,21 @@ async function register(req, res) {
     } = req.body || {};
 
     const cleanUsername =
-      username?.trim().toLowerCase();
+      String(username || "")
+        .trim()
+        .toLowerCase();
 
     const cleanEmail =
-      email?.trim().toLowerCase();
+      String(email || "")
+        .trim()
+        .toLowerCase();
 
     const cleanName = String(
       fullName || name || ""
     ).trim();
 
     const cleanPhone =
-      phone?.trim() || "";
+      String(phone || "").trim();
 
     if (
       !cleanUsername ||
@@ -257,13 +430,17 @@ async function login(req, res) {
     } = req.body || {};
 
     const cleanEmail =
-      email?.trim().toLowerCase() || "";
+      String(email || "")
+        .trim()
+        .toLowerCase();
 
     const cleanPhone =
-      phone?.trim() || "";
+      String(phone || "").trim();
 
     const cleanUsername =
-      username?.trim().toLowerCase() || "";
+      String(username || "")
+        .trim()
+        .toLowerCase();
 
     if (!password) {
       return res.status(400).json({
@@ -322,6 +499,13 @@ async function login(req, res) {
       });
     }
 
+    if (user.isDeactivated) {
+      return res.status(403).json({
+        message:
+          "This account is currently deactivated.",
+      });
+    }
+
     const passwordMatches =
       await bcrypt.compare(
         password,
@@ -335,7 +519,52 @@ async function login(req, res) {
       });
     }
 
-    const token = createToken(user);
+    /* -------------------------------------------------------
+       TWO-FACTOR AUTHENTICATION
+    ------------------------------------------------------- */
+
+    const userSettings =
+      await UserSettings.findOne({
+        user: user._id,
+      });
+
+    const twoFactorEnabled = Boolean(
+      userSettings?.twoFactorEnabled
+    );
+
+    if (twoFactorEnabled) {
+      try {
+        const challengeToken =
+          await createTwoFactorChallenge(
+            user
+          );
+
+        return res.status(200).json({
+          message:
+            "Two-factor authentication code required.",
+          requiresTwoFactor: true,
+          challengeToken,
+          user: publicUser(user),
+        });
+      } catch (emailError) {
+        console.error(
+          "2FA EMAIL ERROR:",
+          emailError
+        );
+
+        return res.status(500).json({
+          message:
+            "Unable to send the security code. Please try again.",
+        });
+      }
+    }
+
+    /* -------------------------------------------------------
+       NORMAL LOGIN
+    ------------------------------------------------------- */
+
+    const token =
+      await createToken(user, req);
 
     return res.status(200).json({
       message:
@@ -357,16 +586,169 @@ async function login(req, res) {
 }
 
 /* =========================================================
+   VERIFY TWO-FACTOR CODE
+========================================================= */
+
+async function verifyTwoFactor(req, res) {
+  try {
+    const {
+      challengeToken,
+      code,
+    } = req.body || {};
+
+    if (!challengeToken) {
+      return res.status(400).json({
+        message:
+          "Two-factor challenge is required.",
+      });
+    }
+
+    const cleanCode =
+      String(code || "").trim();
+
+    if (!cleanCode) {
+      return res.status(400).json({
+        message:
+          "Security code is required.",
+      });
+    }
+
+    if (!/^\d{6}$/.test(cleanCode)) {
+      return res.status(400).json({
+        message:
+          "Security code must contain 6 digits.",
+      });
+    }
+
+    const challenge =
+      await TwoFactorChallenge.findOne({
+        challengeToken,
+      });
+
+    if (!challenge) {
+      return res.status(401).json({
+        message:
+          "This security challenge is invalid or has expired.",
+      });
+    }
+
+    if (
+      challenge.expiresAt <=
+      new Date()
+    ) {
+      await challenge.deleteOne();
+
+      return res.status(401).json({
+        message:
+          "This security code has expired. Please sign in again.",
+      });
+    }
+
+    if (challenge.attempts >= 5) {
+      await challenge.deleteOne();
+
+      return res.status(429).json({
+        message:
+          "Too many incorrect attempts. Please sign in again.",
+      });
+    }
+
+    const submittedHash =
+      hashValue(cleanCode);
+
+    if (
+      submittedHash !==
+      challenge.codeHash
+    ) {
+      challenge.attempts += 1;
+
+      await challenge.save();
+
+      return res.status(401).json({
+        message:
+          "Incorrect security code.",
+        attemptsRemaining:
+          Math.max(
+            0,
+            5 - challenge.attempts
+          ),
+      });
+    }
+
+    const user =
+      await User.findById(
+        challenge.user
+      );
+
+    if (!user) {
+      await challenge.deleteOne();
+
+      return res.status(404).json({
+        message:
+          "User no longer exists.",
+      });
+    }
+
+    if (user.isDeactivated) {
+      await challenge.deleteOne();
+
+      return res.status(403).json({
+        message:
+          "This account is currently deactivated.",
+      });
+    }
+
+    const settings =
+      await UserSettings.findOne({
+        user: user._id,
+      });
+
+    if (!settings?.twoFactorEnabled) {
+      await challenge.deleteOne();
+
+      return res.status(400).json({
+        message:
+          "Two-factor authentication is not enabled for this account.",
+      });
+    }
+
+    challenge.verifiedAt =
+      new Date();
+
+    await challenge.save();
+
+    const token =
+      await createToken(user, req);
+
+    await challenge.deleteOne();
+
+    return res.status(200).json({
+      message:
+        "Two-factor authentication successful.",
+      token,
+      user: publicUser(user),
+    });
+  } catch (error) {
+    console.error(
+      "VERIFY TWO FACTOR ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      message:
+        "Unable to verify the security code.",
+    });
+  }
+}
+
+/* =========================================================
    GOOGLE LOGIN
 ========================================================= */
 
 async function googleLogin(req, res) {
   try {
-    const { idToken } = req.body || {};
-
-    /* -------------------------------------------------------
-       Validate request
-    ------------------------------------------------------- */
+    const { idToken } =
+      req.body || {};
 
     if (!idToken) {
       return res.status(400).json({
@@ -375,16 +757,12 @@ async function googleLogin(req, res) {
       });
     }
 
-    /* -------------------------------------------------------
-       Validate server configuration
-    ------------------------------------------------------- */
-
     if (
       !GOOGLE_CLIENT_ID ||
       !googleClient
     ) {
       console.error(
-        "[GOOGLE] GOOGLE_CLIENT_ID is missing on the server."
+        "[GOOGLE] GOOGLE_CLIENT_ID is missing."
       );
 
       return res.status(500).json({
@@ -392,13 +770,6 @@ async function googleLogin(req, res) {
           "Google login is not configured on the server.",
       });
     }
-
-    /* -------------------------------------------------------
-       Google diagnostics
-       -------------------------------------------------------
-       This happens BEFORE verifyIdToken() so we can see
-       exactly which audience Google placed inside the token.
-    ------------------------------------------------------- */
 
     console.log(
       "[GOOGLE] Verifying Google ID token..."
@@ -433,11 +804,6 @@ async function googleLogin(req, res) {
     );
 
     console.log(
-      "[GOOGLE] AUDIENCE TYPE:",
-      typeof diagnosticPayload?.aud
-    );
-
-    console.log(
       "[GOOGLE] AUDIENCE MATCH:",
       String(
         diagnosticPayload?.aud
@@ -445,14 +811,11 @@ async function googleLogin(req, res) {
         String(GOOGLE_CLIENT_ID)
     );
 
-    /* -------------------------------------------------------
-       REAL GOOGLE TOKEN VERIFICATION
-    ------------------------------------------------------- */
-
     const ticket =
       await googleClient.verifyIdToken({
         idToken,
-        audience: GOOGLE_CLIENT_ID,
+        audience:
+          GOOGLE_CLIENT_ID,
       });
 
     const payload =
@@ -465,32 +828,15 @@ async function googleLogin(req, res) {
       });
     }
 
-    /* -------------------------------------------------------
-       Extra audience verification
-    ------------------------------------------------------- */
-
-    console.log(
-      "[GOOGLE] Verified token audience:",
-      payload.aud
-    );
-
     if (
       String(payload.aud) !==
       String(GOOGLE_CLIENT_ID)
     ) {
-      console.error(
-        "[GOOGLE] Audience mismatch after verification."
-      );
-
       return res.status(401).json({
         message:
           "Google token audience does not match Snapgram's configured Google client.",
       });
     }
-
-    /* -------------------------------------------------------
-       Extract Google account information
-    ------------------------------------------------------- */
 
     const googleId =
       payload.sub;
@@ -525,19 +871,10 @@ async function googleLogin(req, res) {
       });
     }
 
-    /* -------------------------------------------------------
-       Find existing user by Google ID
-    ------------------------------------------------------- */
-
     let user =
       await User.findOne({
         googleId,
       });
-
-    /* -------------------------------------------------------
-       If not found, try email
-       This connects an existing Snapgram account.
-    ------------------------------------------------------- */
 
     if (!user) {
       user =
@@ -545,10 +882,6 @@ async function googleLogin(req, res) {
           email,
         });
     }
-
-    /* -------------------------------------------------------
-       Existing user
-    ------------------------------------------------------- */
 
     if (user) {
       user.googleId =
@@ -576,13 +909,7 @@ async function googleLogin(req, res) {
       }
 
       await user.save();
-    }
-
-    /* -------------------------------------------------------
-       New user
-    ------------------------------------------------------- */
-
-    else {
+    } else {
       const username =
         await generateUniqueUsername(
           payload.given_name ||
@@ -597,17 +924,19 @@ async function googleLogin(req, res) {
           fullName,
           avatar,
           googleId,
-          authProvider:
-            "google",
+          authProvider: "google",
         });
     }
 
-    /* -------------------------------------------------------
-       Create Snapgram JWT
-    ------------------------------------------------------- */
+    if (user.isDeactivated) {
+      return res.status(403).json({
+        message:
+          "This account is currently deactivated.",
+      });
+    }
 
     const token =
-      createToken(user);
+      await createToken(user, req);
 
     console.log(
       "[GOOGLE] Login successful:",
@@ -669,10 +998,6 @@ async function facebookLogin(req, res) {
       process.env.FACEBOOK_APP_SECRET;
 
     if (!appId || !appSecret) {
-      console.error(
-        "Facebook environment variables are missing."
-      );
-
       return res.status(500).json({
         message:
           "Facebook login is not configured on the server.",
@@ -681,10 +1006,6 @@ async function facebookLogin(req, res) {
 
     const appAccessToken =
       `${appId}|${appSecret}`;
-
-    /* -------------------------------------------------------
-       Validate Facebook access token
-    ------------------------------------------------------- */
 
     const debugResponse =
       await axios.get(
@@ -721,10 +1042,6 @@ async function facebookLogin(req, res) {
           "Facebook token belongs to another application.",
       });
     }
-
-    /* -------------------------------------------------------
-       Get Facebook profile
-    ------------------------------------------------------- */
 
     const profileResponse =
       await axios.get(
@@ -771,18 +1088,10 @@ async function facebookLogin(req, res) {
       });
     }
 
-    /* -------------------------------------------------------
-       Find existing Facebook account
-    ------------------------------------------------------- */
-
     let user =
       await User.findOne({
         facebookId,
       });
-
-    /* -------------------------------------------------------
-       Fall back to email
-    ------------------------------------------------------- */
 
     if (!user) {
       user =
@@ -790,10 +1099,6 @@ async function facebookLogin(req, res) {
           email,
         });
     }
-
-    /* -------------------------------------------------------
-       Existing user
-    ------------------------------------------------------- */
 
     if (user) {
       user.facebookId =
@@ -821,13 +1126,7 @@ async function facebookLogin(req, res) {
       }
 
       await user.save();
-    }
-
-    /* -------------------------------------------------------
-       New user
-    ------------------------------------------------------- */
-
-    else {
+    } else {
       const username =
         await generateUniqueUsername(
           fullName ||
@@ -847,12 +1146,15 @@ async function facebookLogin(req, res) {
         });
     }
 
-    /* -------------------------------------------------------
-       Create Snapgram JWT
-    ------------------------------------------------------- */
+    if (user.isDeactivated) {
+      return res.status(403).json({
+        message:
+          "This account is currently deactivated.",
+      });
+    }
 
     const token =
-      createToken(user);
+      await createToken(user, req);
 
     return res.status(200).json({
       message:
@@ -882,8 +1184,8 @@ async function facebookLogin(req, res) {
 async function getMe(req, res) {
   try {
     const userId =
-      req.user?.id ||
       req.user?._id ||
+      req.user?.id ||
       req.user?.userId;
 
     if (!userId) {
@@ -920,6 +1222,346 @@ async function getMe(req, res) {
 }
 
 /* =========================================================
+   GET LOGIN SESSIONS
+========================================================= */
+
+async function getSessions(req, res) {
+  try {
+    const sessions =
+      await UserSession.find({
+        user: req.user._id,
+        revokedAt: null,
+      })
+        .sort({
+          lastSeen: -1,
+        })
+        .lean();
+
+    /*
+     * The JWT sessionId is not currently attached
+     * to req.session by your auth middleware.
+     *
+     * We therefore safely return current=false
+     * until middleware exposes the JWT session.
+     */
+    const result =
+      sessions.map(
+        (session) => ({
+          _id:
+            session.sessionId,
+
+          sessionId:
+            session.sessionId,
+
+          deviceName:
+            session.deviceName ||
+            "Unknown device",
+
+          platform:
+            session.platform ||
+            "Unknown",
+
+          location:
+            session.location ||
+            "Unknown location",
+
+          lastSeen:
+            session.lastSeen,
+
+          createdAt:
+            session.createdAt,
+
+          current: false,
+        })
+      );
+
+    return res.status(200).json({
+      sessions: result,
+    });
+  } catch (error) {
+    console.error(
+      "GET SESSIONS ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      message:
+        "Unable to load login activity.",
+    });
+  }
+}
+
+/* =========================================================
+   REVOKE LOGIN SESSION
+========================================================= */
+
+async function revokeSession(req, res) {
+  try {
+    const session =
+      await UserSession.findOne({
+        sessionId:
+          req.params.sessionId,
+        user: req.user._id,
+      });
+
+    if (!session) {
+      return res.status(404).json({
+        message:
+          "Login session not found.",
+      });
+    }
+
+    session.revokedAt =
+      new Date();
+
+    await session.save();
+
+    return res.status(200).json({
+      message:
+        "Login session revoked successfully.",
+    });
+  } catch (error) {
+    console.error(
+      "REVOKE SESSION ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      message:
+        "Unable to revoke login session.",
+    });
+  }
+}
+
+/* =========================================================
+   CHANGE PASSWORD
+========================================================= */
+
+async function changePassword(req, res) {
+  try {
+    const {
+      currentPassword,
+      newPassword,
+    } = req.body || {};
+
+    if (!currentPassword) {
+      return res.status(400).json({
+        message:
+          "Current password is required.",
+      });
+    }
+
+    if (!newPassword) {
+      return res.status(400).json({
+        message:
+          "New password is required.",
+      });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        message:
+          "New password must contain at least 8 characters.",
+      });
+    }
+
+    if (
+      currentPassword ===
+      newPassword
+    ) {
+      return res.status(400).json({
+        message:
+          "New password must be different from the current password.",
+      });
+    }
+
+    const user =
+      await User.findById(
+        req.user._id
+      ).select("+password");
+
+    if (!user) {
+      return res.status(404).json({
+        message:
+          "User not found.",
+      });
+    }
+
+    if (!user.password) {
+      return res.status(400).json({
+        message:
+          "This account does not currently use a password. Please use your social login provider.",
+      });
+    }
+
+    const matches =
+      await bcrypt.compare(
+        currentPassword,
+        user.password
+      );
+
+    if (!matches) {
+      return res.status(400).json({
+        message:
+          "Current password is incorrect.",
+      });
+    }
+
+    user.password =
+      await bcrypt.hash(
+        newPassword,
+        12
+      );
+
+    await user.save();
+
+    /*
+     * Revoke every other active session.
+     */
+    await UserSession.updateMany(
+      {
+        user: user._id,
+        revokedAt: null,
+      },
+      {
+        $set: {
+          revokedAt:
+            new Date(),
+        },
+      }
+    );
+
+    return res.status(200).json({
+      message:
+        "Password changed successfully.",
+    });
+  } catch (error) {
+    console.error(
+      "CHANGE PASSWORD ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      message:
+        "Unable to change password.",
+    });
+  }
+}
+
+/* =========================================================
+   DEACTIVATE ACCOUNT
+========================================================= */
+
+async function deactivateAccount(req, res) {
+  try {
+    const user =
+      await User.findById(
+        req.user._id
+      );
+
+    if (!user) {
+      return res.status(404).json({
+        message:
+          "User not found.",
+      });
+    }
+
+    user.isDeactivated = true;
+    user.deactivatedAt =
+      new Date();
+
+    user.isOnline = false;
+    user.lastSeen =
+      new Date();
+
+    await user.save();
+
+    await UserSession.updateMany(
+      {
+        user: user._id,
+        revokedAt: null,
+      },
+      {
+        $set: {
+          revokedAt:
+            new Date(),
+        },
+      }
+    );
+
+    return res.status(200).json({
+      message:
+        "Your account has been deactivated.",
+    });
+  } catch (error) {
+    console.error(
+      "DEACTIVATE ACCOUNT ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      message:
+        "Unable to deactivate account.",
+    });
+  }
+}
+
+/* =========================================================
+   DELETE ACCOUNT
+========================================================= */
+
+async function deleteAccount(req, res) {
+  try {
+    const user =
+      await User.findById(
+        req.user._id
+      );
+
+    if (!user) {
+      return res.status(404).json({
+        message:
+          "User not found.",
+      });
+    }
+
+    await UserSession.deleteMany({
+      user: user._id,
+    });
+
+    await UserSettings.deleteOne({
+      user: user._id,
+    });
+
+    await TwoFactorChallenge.deleteMany({
+      user: user._id,
+    });
+
+    await VerificationRequest.deleteOne({
+      user: user._id,
+    });
+
+    await User.deleteOne({
+      _id: user._id,
+    });
+
+    return res.status(200).json({
+      message:
+        "Your account has been deleted.",
+    });
+  } catch (error) {
+    console.error(
+      "DELETE ACCOUNT ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      message:
+        "Unable to delete account.",
+    });
+  }
+}
+
+/* =========================================================
    FORGOT PASSWORD
 ========================================================= */
 
@@ -937,11 +1579,6 @@ async function forgotPassword(req, res) {
           "Email address is required.",
       });
     }
-
-    /*
-     * Always return the same response so
-     * accounts cannot be discovered.
-     */
 
     const genericResponse = {
       message:
@@ -1066,14 +1703,11 @@ async function resetPassword(req, res) {
       });
     }
 
-    const hashedPassword =
+    user.password =
       await bcrypt.hash(
         password,
         12
       );
-
-    user.password =
-      hashedPassword;
 
     user.passwordResetToken =
       undefined;
@@ -1087,6 +1721,23 @@ async function resetPassword(req, res) {
     }
 
     await user.save();
+
+    /*
+     * Password reset should invalidate
+     * all existing login sessions.
+     */
+    await UserSession.updateMany(
+      {
+        user: user._id,
+        revokedAt: null,
+      },
+      {
+        $set: {
+          revokedAt:
+            new Date(),
+        },
+      }
+    );
 
     return res.status(200).json({
       message:
@@ -1117,4 +1768,10 @@ module.exports = {
   getMe,
   forgotPassword,
   resetPassword,
+  changePassword,
+  getSessions,
+  revokeSession,
+  deactivateAccount,
+  deleteAccount,
+  verifyTwoFactor,
 };
