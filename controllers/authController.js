@@ -15,10 +15,6 @@ const {
   sendTwoFactorCode,
 } = require("../services/emailService");
 
-/* =========================================================
-   GOOGLE CONFIGURATION
-========================================================= */
-
 const GOOGLE_CLIENT_ID = String(
   process.env.GOOGLE_CLIENT_ID || ""
 ).trim();
@@ -26,10 +22,6 @@ const GOOGLE_CLIENT_ID = String(
 const googleClient = GOOGLE_CLIENT_ID
   ? new OAuth2Client(GOOGLE_CLIENT_ID)
   : null;
-
-/* =========================================================
-   SECURITY HELPERS
-========================================================= */
 
 function generateTwoFactorCode() {
   return String(crypto.randomInt(100000, 1000000));
@@ -49,10 +41,6 @@ function hashToken(token) {
     .digest("hex");
 }
 
-/* =========================================================
-   PUBLIC USER
-========================================================= */
-
 function publicUser(user) {
   if (!user) {
     return null;
@@ -69,10 +57,6 @@ function publicUser(user) {
 
   return data;
 }
-
-/* =========================================================
-   DEVICE / SESSION HELPERS
-========================================================= */
 
 function getDeviceName(req) {
   const userAgent = String(
@@ -134,10 +118,6 @@ function getPlatform(req) {
   return "Unknown";
 }
 
-/* =========================================================
-   CREATE AUTH TOKEN + SESSION
-========================================================= */
-
 async function createToken(user, req) {
   if (!user?._id) {
     throw new Error("Cannot create token without a user.");
@@ -182,10 +162,6 @@ async function createToken(user, req) {
   return token;
 }
 
-/* =========================================================
-   USERNAME HELPERS
-========================================================= */
-
 function sanitizeUsername(value) {
   return String(value || "")
     .toLowerCase()
@@ -219,10 +195,6 @@ async function generateUniqueUsername(base) {
 
   return candidate;
 }
-
-/* =========================================================
-   GOOGLE TOKEN DIAGNOSTICS
-========================================================= */
 
 function decodeGoogleTokenForDiagnostics(idToken) {
   try {
@@ -262,10 +234,6 @@ function decodeGoogleTokenForDiagnostics(idToken) {
     return null;
   }
 }
-
-/* =========================================================
-   CREATE TWO-FACTOR CHALLENGE
-========================================================= */
 
 async function createTwoFactorChallenge(user) {
   const code = generateTwoFactorCode();
@@ -308,10 +276,6 @@ async function createTwoFactorChallenge(user) {
 
   return challengeToken;
 }
-
-/* =========================================================
-   REGISTER
-========================================================= */
 
 async function register(req, res) {
   try {
@@ -416,10 +380,6 @@ async function register(req, res) {
   }
 }
 
-/* =========================================================
-   LOGIN
-========================================================= */
-
 async function login(req, res) {
   try {
     const {
@@ -519,10 +479,6 @@ async function login(req, res) {
       });
     }
 
-    /* -------------------------------------------------------
-       TWO-FACTOR AUTHENTICATION
-    ------------------------------------------------------- */
-
     const userSettings =
       await UserSettings.findOne({
         user: user._id,
@@ -559,10 +515,6 @@ async function login(req, res) {
       }
     }
 
-    /* -------------------------------------------------------
-       NORMAL LOGIN
-    ------------------------------------------------------- */
-
     const token =
       await createToken(user, req);
 
@@ -584,10 +536,6 @@ async function login(req, res) {
     });
   }
 }
-
-/* =========================================================
-   VERIFY TWO-FACTOR CODE
-========================================================= */
 
 async function verifyTwoFactor(req, res) {
   try {
@@ -740,10 +688,6 @@ async function verifyTwoFactor(req, res) {
     });
   }
 }
-
-/* =========================================================
-   GOOGLE LOGIN
-========================================================= */
 
 async function googleLogin(req, res) {
   try {
@@ -974,10 +918,6 @@ async function googleLogin(req, res) {
   }
 }
 
-/* =========================================================
-   FACEBOOK LOGIN
-========================================================= */
-
 async function facebookLogin(req, res) {
   try {
     const {
@@ -1177,10 +1117,6 @@ async function facebookLogin(req, res) {
   }
 }
 
-/* =========================================================
-   GET CURRENT USER
-========================================================= */
-
 async function getMe(req, res) {
   try {
     const userId =
@@ -1221,10 +1157,6 @@ async function getMe(req, res) {
   }
 }
 
-/* =========================================================
-   GET LOGIN SESSIONS
-========================================================= */
-
 async function getSessions(req, res) {
   try {
     const sessions =
@@ -1237,13 +1169,6 @@ async function getSessions(req, res) {
         })
         .lean();
 
-    /*
-     * The JWT sessionId is not currently attached
-     * to req.session by your auth middleware.
-     *
-     * We therefore safely return current=false
-     * until middleware exposes the JWT session.
-     */
     const result =
       sessions.map(
         (session) => ({
@@ -1291,10 +1216,6 @@ async function getSessions(req, res) {
   }
 }
 
-/* =========================================================
-   REVOKE LOGIN SESSION
-========================================================= */
-
 async function revokeSession(req, res) {
   try {
     const session =
@@ -1332,10 +1253,6 @@ async function revokeSession(req, res) {
     });
   }
 }
-
-/* =========================================================
-   CHANGE PASSWORD
-========================================================= */
 
 async function changePassword(req, res) {
   try {
@@ -1415,9 +1332,6 @@ async function changePassword(req, res) {
 
     await user.save();
 
-    /*
-     * Revoke every other active session.
-     */
     await UserSession.updateMany(
       {
         user: user._id,
@@ -1447,10 +1361,6 @@ async function changePassword(req, res) {
     });
   }
 }
-
-/* =========================================================
-   DEACTIVATE ACCOUNT
-========================================================= */
 
 async function deactivateAccount(req, res) {
   try {
@@ -1506,10 +1416,6 @@ async function deactivateAccount(req, res) {
   }
 }
 
-/* =========================================================
-   DELETE ACCOUNT
-========================================================= */
-
 async function deleteAccount(req, res) {
   try {
     const user =
@@ -1560,10 +1466,6 @@ async function deleteAccount(req, res) {
     });
   }
 }
-
-/* =========================================================
-   FORGOT PASSWORD
-========================================================= */
 
 async function forgotPassword(req, res) {
   try {
@@ -1646,10 +1548,6 @@ async function forgotPassword(req, res) {
   }
 }
 
-/* =========================================================
-   RESET PASSWORD
-========================================================= */
-
 async function resetPassword(req, res) {
   try {
     const token = String(
@@ -1722,10 +1620,6 @@ async function resetPassword(req, res) {
 
     await user.save();
 
-    /*
-     * Password reset should invalidate
-     * all existing login sessions.
-     */
     await UserSession.updateMany(
       {
         user: user._id,
@@ -1755,10 +1649,6 @@ async function resetPassword(req, res) {
     });
   }
 }
-
-/* =========================================================
-   EXPORTS
-========================================================= */
 
 module.exports = {
   register,

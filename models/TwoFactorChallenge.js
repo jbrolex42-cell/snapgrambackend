@@ -31,7 +31,6 @@ const twoFactorChallengeSchema =
       expiresAt: {
         type: Date,
         required: true,
-        index: true,
       },
 
       verifiedAt: {
@@ -44,10 +43,6 @@ const twoFactorChallengeSchema =
     }
   );
 
-/*
- * MongoDB automatically removes expired
- * challenges.
- */
 twoFactorChallengeSchema.index(
   {
     expiresAt: 1,

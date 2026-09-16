@@ -6,6 +6,7 @@ const {
   getMyPosts,
   getMyReels,
   getSavedPosts,
+  getLikedPosts,
   getTaggedPosts,
   getMyReposts,
   repostPost,
@@ -107,6 +108,12 @@ router.post(
   "/:id/save",
   protect,
   savePost
+);
+
+router.get(
+  "/liked",
+  protect,
+  getLikedPosts
 );
 
 router.delete(

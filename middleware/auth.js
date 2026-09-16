@@ -79,13 +79,6 @@ async function protect(req, res, next) {
       });
     }
 
-    /*
-     * New tokens contain sessionId.
-     *
-     * Older tokens without sessionId are
-     * still accepted so existing logged-in
-     * users are not immediately kicked out.
-     */
     if (decoded.sessionId) {
       const session =
         await UserSession.findOne({

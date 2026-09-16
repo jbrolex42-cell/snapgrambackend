@@ -1,10 +1,6 @@
 const User = require("../models/User");
 const VerificationRequest = require("../models/VerificationRequest");
 
-/* =========================================================
-   HELPERS
-========================================================= */
-
 function getFullName(user) {
   return (
     String(
@@ -21,10 +17,6 @@ function cleanString(value) {
     : "";
 }
 
-/* =========================================================
-   APPLY FOR VERIFICATION
-========================================================= */
-
 async function applyForVerification(req, res) {
   try {
     const user = await User.findById(
@@ -37,10 +29,6 @@ async function applyForVerification(req, res) {
       });
     }
 
-    /* -------------------------------------------------------
-       Already verified
-    ------------------------------------------------------- */
-
     if (user.isVerified === true) {
       return res.status(400).json({
         message:
@@ -50,18 +38,10 @@ async function applyForVerification(req, res) {
       });
     }
 
-    /* -------------------------------------------------------
-       Existing request
-    ------------------------------------------------------- */
-
     const existingRequest =
       await VerificationRequest.findOne({
         user: user._id,
       });
-
-    /* -------------------------------------------------------
-       Pending request
-    ------------------------------------------------------- */
 
     if (
       existingRequest &&
@@ -95,11 +75,6 @@ async function applyForVerification(req, res) {
       });
     }
 
-    /* -------------------------------------------------------
-       Approved request
-       Keep User and VerificationRequest synchronized.
-    ------------------------------------------------------- */
-
     if (
       existingRequest &&
       existingRequest.status === "approved"
@@ -117,10 +92,6 @@ async function applyForVerification(req, res) {
         isVerified: true,
       });
     }
-
-    /* -------------------------------------------------------
-       Validate application
-    ------------------------------------------------------- */
 
     const category = cleanString(
       req.body?.category
@@ -169,17 +140,8 @@ async function applyForVerification(req, res) {
       });
     }
 
-    /* -------------------------------------------------------
-       Correct User field:
-       fullName, NOT name
-    ------------------------------------------------------- */
-
     const fullName =
       getFullName(user);
-
-    /* -------------------------------------------------------
-       Resubmit previously rejected request
-    ------------------------------------------------------- */
 
     if (
       existingRequest &&
@@ -238,10 +200,6 @@ async function applyForVerification(req, res) {
       });
     }
 
-    /* -------------------------------------------------------
-       Create new request
-    ------------------------------------------------------- */
-
     const request =
       await VerificationRequest.create({
         user: user._id,
@@ -252,10 +210,6 @@ async function applyForVerification(req, res) {
         website,
         status: "pending",
       });
-
-    /* -------------------------------------------------------
-       Synchronize User
-    ------------------------------------------------------- */
 
     user.isVerified = false;
     user.verificationStatus =
@@ -296,10 +250,6 @@ async function applyForVerification(req, res) {
   }
 }
 
-/* =========================================================
-   GET VERIFICATION STATUS
-========================================================= */
-
 async function getVerificationStatus(
   req,
   res
@@ -327,18 +277,10 @@ async function getVerificationStatus(
       user.verificationStatus ||
       "none";
 
-    /* -------------------------------------------------------
-       Request is the source of truth when it exists
-    ------------------------------------------------------- */
-
     if (request) {
       status =
         request.status;
     }
-
-    /* -------------------------------------------------------
-       Synchronize User with request
-    ------------------------------------------------------- */
 
     if (
       request?.status ===
@@ -388,11 +330,6 @@ async function getVerificationStatus(
       await user.save();
     }
 
-    /* -------------------------------------------------------
-       IMPORTANT:
-       User model uses fullName, not name.
-    ------------------------------------------------------- */
-
     return res.status(200).json({
       isVerified:
         Boolean(user.isVerified),
@@ -427,11 +364,6 @@ async function getVerificationStatus(
     });
   }
 }
-
-/* =========================================================
-   GET PENDING VERIFICATIONS
-   ADMIN ONLY
-========================================================= */
 
 async function getPendingVerifications(
   req,
@@ -472,11 +404,6 @@ async function getPendingVerifications(
     });
   }
 }
-
-/* =========================================================
-   APPROVE VERIFICATION
-   ADMIN ONLY
-========================================================= */
 
 async function approveVerification(
   req,
@@ -577,11 +504,6 @@ async function approveVerification(
     });
   }
 }
-
-/* =========================================================
-   REJECT VERIFICATION
-   ADMIN ONLY
-========================================================= */
 
 async function rejectVerification(
   req,
@@ -693,10 +615,6 @@ async function rejectVerification(
     });
   }
 }
-
-/* =========================================================
-   EXPORTS
-========================================================= */
 
 module.exports = {
   applyForVerification,

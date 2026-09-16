@@ -116,6 +116,21 @@ const commentsSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+
+    commentingFrom: {
+      type: String,
+      enum: [
+        "Everyone",
+        "Following",
+        "No one",
+      ],
+      default: "Everyone",
+    },
+
+    commentFilterEnabled: {
+      type: Boolean,
+      default: true,
+    },
   },
   { _id: false }
 );
@@ -210,6 +225,11 @@ const userSettingsSchema = new mongoose.Schema(
       default: () => ({}),
     },
 
+    hiddenWordsEnabled: {
+      type: Boolean,
+       default: true,
+    },
+
     hiddenWords: {
       type: [String],
       default: [],
@@ -223,12 +243,22 @@ const userSettingsSchema = new mongoose.Schema(
       ],
       default: "standard",
     },
+     
+    uploadAtHighestQuality: {
+        type: Boolean,
+        default: false,
+    },
 
     dataSaver: {
       type: Boolean,
       default: false,
     },
-
+    
+    autoplay: {
+      type: Boolean,
+       default: true,
+    }, 
+    
     appearance: {
       type: String,
       enum: [
@@ -260,6 +290,11 @@ const userSettingsSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+ 
+    animations: {
+       type: Boolean,
+      default: true,
+   },
 
     accessibility: {
       type: accessibilitySchema,

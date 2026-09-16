@@ -2,7 +2,6 @@ const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema(
   {
-
     username: {
       type: String,
       required: true,
@@ -95,9 +94,14 @@ const userSchema = new mongoose.Schema(
       default: "",
     },
 
+    // --------------------------------------------------
+    // VERIFICATION
+    // --------------------------------------------------
+
     isVerified: {
       type: Boolean,
       default: false,
+      index: true,
     },
 
     verificationStatus: {
@@ -109,12 +113,18 @@ const userSchema = new mongoose.Schema(
         "rejected",
       ],
       default: "none",
+      index: true,
     },
 
     isAdmin: {
       type: Boolean,
       default: false,
+      index: true,
     },
+
+    // --------------------------------------------------
+    // FOLLOWERS
+    // --------------------------------------------------
 
     followersCount: {
       type: Number,
@@ -128,10 +138,19 @@ const userSchema = new mongoose.Schema(
       min: 0,
     },
 
+    // --------------------------------------------------
+    // PRIVACY
+    // --------------------------------------------------
+
     isPrivate: {
       type: Boolean,
       default: false,
+      index: true,
     },
+
+    // --------------------------------------------------
+    // ACCOUNT STATUS
+    // --------------------------------------------------
 
     isDeactivated: {
       type: Boolean,
@@ -144,12 +163,20 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
 
+    // --------------------------------------------------
+    // CLOSE FRIENDS
+    // --------------------------------------------------
+
     closeFriends: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
       },
     ],
+
+    // --------------------------------------------------
+    // BLOCKED USERS
+    // --------------------------------------------------
 
     blockedUsers: [
       {
@@ -158,12 +185,20 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
+    // --------------------------------------------------
+    // MUTED USERS
+    // --------------------------------------------------
+
     mutedUsers: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
       },
     ],
+
+    // --------------------------------------------------
+    // RESTRICTED USERS
+    // --------------------------------------------------
 
     restrictedUsers: [
       {
@@ -172,6 +207,10 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
+    // --------------------------------------------------
+    // SAVED POSTS
+    // --------------------------------------------------
+
     savedPosts: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -179,9 +218,14 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
+    // --------------------------------------------------
+    // ONLINE STATUS
+    // --------------------------------------------------
+
     isOnline: {
       type: Boolean,
       default: false,
+      index: true,
     },
 
     lastSeen: {
@@ -189,19 +233,47 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
 
+    // --------------------------------------------------
+    // PASSWORD RESET
+    // --------------------------------------------------
+
     passwordResetToken: {
       type: String,
       default: undefined,
+      select: false,
     },
 
     passwordResetExpires: {
       type: Date,
       default: undefined,
+      select: false,
     },
   },
   {
     timestamps: true,
   }
 );
+
+// --------------------------------------------------
+// INDEXES
+// --------------------------------------------------
+
+userSchema.index({
+  username: 1,
+});
+
+userSchema.index({
+  email: 1,
+});
+
+userSchema.index({
+  isDeactivated: 1,
+  createdAt: -1,
+});
+
+userSchema.index({
+  verificationStatus: 1,
+  createdAt: -1,
+});
 
 module.exports = mongoose.model("User", userSchema);

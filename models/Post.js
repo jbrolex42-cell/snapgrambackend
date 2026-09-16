@@ -66,6 +66,7 @@ const locationSchema = new mongoose.Schema(
 
 const postSchema = new mongoose.Schema(
   {
+
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -140,6 +141,19 @@ const postSchema = new mongoose.Schema(
       },
     ],
 
+    repostOf: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Post",
+      default: null,
+      index: true,
+    },
+
+    repostsCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     commentsCount: {
       type: Number,
       default: 0,
@@ -159,19 +173,18 @@ const postSchema = new mongoose.Schema(
       index: true,
     },
 
-    repostOf: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Post",
-      default: null,
+    isArchived: {
+      type: Boolean,
+      default: false,
       index: true,
     },
 
-    repostsCount: {
-      type: Number,
-      default: 0,
-      min: 0,
+    archivedAt: {
+      type: Date,
+      default: null,
     },
   },
+
   {
     timestamps: true,
 
@@ -199,6 +212,19 @@ postSchema.index({
 postSchema.index({
   user: 1,
   visibility: 1,
+  createdAt: -1,
+});
+
+postSchema.index({
+  user: 1,
+  isArchived: 1,
+  archivedAt: -1,
+});
+
+postSchema.index({
+  user: 1,
+  postType: 1,
+  isArchived: 1,
   createdAt: -1,
 });
 

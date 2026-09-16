@@ -728,6 +728,9 @@ async function getMyPosts(req, res) {
     const filter = {
       user: userId,
       postType: "post",
+      isArchived: {
+       $ne: true,
+      },
     };
 
     const [
@@ -808,6 +811,9 @@ async function getMyReels(req, res) {
     const filter = {
       user: userId,
       postType: "reel",
+      isArchived: {
+       $ne: true,
+      },
     };
 
     const [
@@ -890,8 +896,13 @@ async function getSavedPosts(
 
     const filter = {
       savedBy: userId,
+
       postType: {
-        $ne: "repost",
+      $ne: "repost",
+      },
+
+      isArchived: {
+       $ne: true,
       },
     };
 
@@ -967,6 +978,10 @@ async function getTaggedPosts(
 
       postType: {
         $ne: "repost",
+      },
+
+      isArchived: {
+       $ne: true,
       },
     };
 
@@ -1383,6 +1398,10 @@ async function getFeed(req, res) {
         $ne: "repost",
       },
 
+      isArchived: {
+       $ne: true,
+      },
+
       $or: [
         {
           visibility: "public",
@@ -1720,6 +1739,82 @@ async function savePost(req, res) {
   }
 }
 
+async function getLikedPosts(req, res) {
+  try {
+    const userId = requireUserId(req, res);
+
+    if (!userId) {
+      return;
+    }
+
+    const {
+      page,
+      limit,
+      skip,
+    } = getPagination(req);
+
+    const filter = {
+      likes: userId,
+
+      isArchived: {
+        $ne: true,
+      },
+
+      postType: {
+        $ne: "repost",
+      },
+    };
+
+    const [posts, total] = await Promise.all([
+      populatePost(
+        Post.find(filter)
+          .sort({
+            createdAt: -1,
+          })
+          .skip(skip)
+          .limit(limit)
+          .lean()
+      ),
+
+      Post.countDocuments(filter),
+    ]);
+
+    const result = normalizePosts(
+      posts,
+      userId
+    );
+
+    console.log("[GET LIKED POSTS]", {
+      userId,
+      page,
+      limit,
+      found: result.length,
+      total,
+    });
+
+    return res.json({
+      success: true,
+      posts: result,
+      page,
+      limit,
+      total,
+      hasMore:
+        skip + result.length < total,
+    });
+  } catch (error) {
+    console.error(
+      "Get liked posts error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Unable to load liked posts.",
+    });
+  }
+}
+
 async function unsavePost(
   req,
   res
@@ -2035,6 +2130,8 @@ module.exports = {
   getMyReels,
 
   getSavedPosts,
+
+  getLikedPosts,
 
   getTaggedPosts,
 

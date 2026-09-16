@@ -43,10 +43,6 @@ function escapeHtml(value = "") {
     );
 }
 
-/* =========================================================
-   PASSWORD RESET
-========================================================= */
-
 async function sendPasswordResetEmail({
   email,
   username,
@@ -241,10 +237,6 @@ Snapgram`,
     `,
   });
 }
-
-/* =========================================================
-   TWO-FACTOR AUTHENTICATION
-========================================================= */
 
 async function sendTwoFactorCode({
   email,
