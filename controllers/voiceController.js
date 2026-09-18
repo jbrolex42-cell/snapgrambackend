@@ -13,6 +13,8 @@ const sendVoiceMessage = async (req, res) => {
       receiverId,
       duration,
       replyTo,
+      mediaEncryptionNonce,
+      mediaEncryptionVersion,
     } = req.body;
 
     console.log(
@@ -143,31 +145,40 @@ const sendVoiceMessage = async (req, res) => {
       }
     );
 
-    const message =
-      await Message.create({
-        conversation: conversationId,
+   const message =
+  await Message.create({
+    conversation: conversationId,
 
-        sender: req.user._id,
+    sender: req.user._id,
 
-        receiver: receiverId,
+    receiver: receiverId,
 
-        type: "voice",
+    type: "voice",
 
-        mediaUrl: upload.secure_url,
+    text: "",
 
-        mediaPublicId: upload.public_id,
+    mediaUrl:
+      uploadResult.secure_url,
 
-        mediaDuration:
-          Number(duration) ||
-          Number(upload.duration) ||
-          0,
+    mediaPublicId:
+      uploadResult.public_id,
 
-        replyTo:
-          replyTo || null,
+    mediaDuration:
+      Number(duration) || 0,
 
-        readBy: [req.user._id],
-      });
+    mediaEncryptionNonce:
+      mediaEncryptionNonce || null,
 
+    mediaEncryptionVersion:
+      mediaEncryptionVersion || null,
+
+    replyTo:
+      replyTo || null,
+
+    readBy: [
+      req.user._id,
+    ],
+  });
     conversation.lastMessage =
       message._id;
 

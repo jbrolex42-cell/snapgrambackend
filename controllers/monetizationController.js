@@ -9,10 +9,6 @@ const {
   getOrCreateMonetizationProfile,
 } = require("../services/monetizationService");
 
-// --------------------------------------------------
-// HELPERS
-// --------------------------------------------------
-
 function getUserId(req) {
   return (
     req.user?._id?.toString() ||
@@ -48,11 +44,6 @@ async function getOrCreateProfile(userId) {
   );
 }
 
-// --------------------------------------------------
-// GET MONETIZATION DASHBOARD
-// GET /api/monetization
-// --------------------------------------------------
-
 async function getMonetizationDashboard(
   req,
   res
@@ -67,7 +58,6 @@ async function getMonetizationDashboard(
       });
     }
 
-    // User must be loaded before using user._id
     const user =
       await User.findById(userId).select(
         "isVerified verificationStatus"
@@ -126,10 +116,6 @@ async function getMonetizationDashboard(
       setup ||
       (await getOrCreateSetup(userId));
 
-    // ------------------------------------------------
-    // EARNINGS
-    // ------------------------------------------------
-
     let completedEarnings = 0;
     let pendingEarnings = 0;
     let paidEarnings = 0;
@@ -166,24 +152,10 @@ async function getMonetizationDashboard(
       }
     }
 
-    /*
-     * IMPORTANT:
-     *
-     * This is only a display balance.
-     * Actual payout availability should eventually
-     * come from a proper accounting/ledger system.
-     *
-     * We never trust the mobile application
-     * to calculate this value.
-     */
     const availableEarnings = Math.max(
       0,
       completedEarnings - paidEarnings
     );
-
-    // ------------------------------------------------
-    // ELIGIBILITY
-    // ------------------------------------------------
 
     const eligible =
       safeProfile.professionalAccount ===
@@ -203,10 +175,6 @@ async function getMonetizationDashboard(
       eligibility = "eligible";
     }
 
-    // ------------------------------------------------
-    // SETUP
-    // ------------------------------------------------
-
     const setupComplete =
       Boolean(
         safeSetup.setupComplete
@@ -219,10 +187,6 @@ async function getMonetizationDashboard(
       safeSetup.payoutCurrency ||
       payoutMethod?.currency ||
       "KES";
-
-    // ------------------------------------------------
-    // RESPONSE
-    // ------------------------------------------------
 
     return res.json({
       success: true,
@@ -323,11 +287,6 @@ async function getMonetizationDashboard(
   }
 }
 
-// --------------------------------------------------
-// UPDATE MONETIZATION DASHBOARD
-// PATCH /api/monetization
-// --------------------------------------------------
-
 async function updateMonetizationDashboard(
   req,
   res
@@ -358,7 +317,6 @@ async function updateMonetizationDashboard(
       professionalAccount,
     };
 
-    // Validate all supplied values
     for (const [
       field,
       value,
@@ -455,11 +413,6 @@ async function updateMonetizationDashboard(
   }
 }
 
-// --------------------------------------------------
-// GET MONETIZATION ELIGIBILITY
-// GET /api/monetization/eligibility
-// --------------------------------------------------
-
 async function getMonetizationEligibility(
   req,
   res
@@ -497,11 +450,6 @@ async function getMonetizationEligibility(
   }
 }
 
-// --------------------------------------------------
-// GET MONETIZATION PROFILE
-// GET /api/monetization/profile
-// --------------------------------------------------
-
 async function getMonetizationProfile(
   req,
   res
@@ -536,11 +484,6 @@ async function getMonetizationProfile(
     });
   }
 }
-
-// --------------------------------------------------
-// UPDATE MONETIZATION PROFILE
-// PATCH /api/monetization/profile
-// --------------------------------------------------
 
 async function updateMonetizationProfile(
   req,
@@ -606,10 +549,6 @@ async function updateMonetizationProfile(
     });
   }
 }
-
-// --------------------------------------------------
-// EXPORTS
-// --------------------------------------------------
 
 module.exports = {
   getMonetizationDashboard,

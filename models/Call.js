@@ -47,7 +47,7 @@ const callSchema = new mongoose.Schema(
 
     startedAt: {
       type: Date,
-      default: null,
+      default: Date.now,
     },
 
     answeredAt: {
@@ -105,6 +105,23 @@ callSchema.index({
   createdAt: -1,
 });
 
+callSchema.pre("validate", function (next) {
+  if (
+    this.caller &&
+    this.receiver &&
+    String(this.caller) ===
+      String(this.receiver)
+  ) {
+    return next(
+      new Error(
+        "Caller and receiver cannot be the same user"
+      )
+    );
+  }
+
+  next();
+});
+
 callSchema.pre("save", function (next) {
   const ids = new Set();
 
@@ -124,9 +141,7 @@ callSchema.pre("save", function (next) {
     ids.add(String(this.receiver));
   }
 
-  this.participants = [
-    ...ids,
-  ];
+  this.participants = [...ids];
 
   next();
 });

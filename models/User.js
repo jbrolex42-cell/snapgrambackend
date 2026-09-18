@@ -16,8 +16,8 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
       unique: true,
-      lowercase: true,
       trim: true,
+      lowercase: true,
     },
 
     password: {
@@ -58,6 +58,7 @@ const userSchema = new mongoose.Schema(
 
     bio: {
       type: String,
+      trim: true,
       maxlength: 150,
       default: "",
     },
@@ -94,10 +95,6 @@ const userSchema = new mongoose.Schema(
       default: "",
     },
 
-    // --------------------------------------------------
-    // VERIFICATION
-    // --------------------------------------------------
-
     isVerified: {
       type: Boolean,
       default: false,
@@ -122,10 +119,6 @@ const userSchema = new mongoose.Schema(
       index: true,
     },
 
-    // --------------------------------------------------
-    // FOLLOWERS
-    // --------------------------------------------------
-
     followersCount: {
       type: Number,
       default: 0,
@@ -138,19 +131,11 @@ const userSchema = new mongoose.Schema(
       min: 0,
     },
 
-    // --------------------------------------------------
-    // PRIVACY
-    // --------------------------------------------------
-
     isPrivate: {
       type: Boolean,
       default: false,
       index: true,
     },
-
-    // --------------------------------------------------
-    // ACCOUNT STATUS
-    // --------------------------------------------------
 
     isDeactivated: {
       type: Boolean,
@@ -163,20 +148,12 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
 
-    // --------------------------------------------------
-    // CLOSE FRIENDS
-    // --------------------------------------------------
-
     closeFriends: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
       },
     ],
-
-    // --------------------------------------------------
-    // BLOCKED USERS
-    // --------------------------------------------------
 
     blockedUsers: [
       {
@@ -185,20 +162,12 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
-    // --------------------------------------------------
-    // MUTED USERS
-    // --------------------------------------------------
-
     mutedUsers: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
       },
     ],
-
-    // --------------------------------------------------
-    // RESTRICTED USERS
-    // --------------------------------------------------
 
     restrictedUsers: [
       {
@@ -207,20 +176,12 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
-    // --------------------------------------------------
-    // SAVED POSTS
-    // --------------------------------------------------
-
     savedPosts: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Post",
       },
     ],
-
-    // --------------------------------------------------
-    // ONLINE STATUS
-    // --------------------------------------------------
 
     isOnline: {
       type: Boolean,
@@ -232,10 +193,6 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
-
-    // --------------------------------------------------
-    // PASSWORD RESET
-    // --------------------------------------------------
 
     passwordResetToken: {
       type: String,
@@ -253,18 +210,6 @@ const userSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
-
-// --------------------------------------------------
-// INDEXES
-// --------------------------------------------------
-
-userSchema.index({
-  username: 1,
-});
-
-userSchema.index({
-  email: 1,
-});
 
 userSchema.index({
   isDeactivated: 1,

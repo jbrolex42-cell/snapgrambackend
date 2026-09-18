@@ -35,12 +35,6 @@ const payoutMethodSchema = new mongoose.Schema(
       maxlength: 150,
     },
 
-    /*
-     * Do not return sensitive account information
-     * directly to the mobile application.
-     *
-     * Prefer storing a provider/token reference.
-     */
     providerAccountId: {
       type: String,
       default: null,

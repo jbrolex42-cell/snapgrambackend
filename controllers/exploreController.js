@@ -1,17 +1,21 @@
-
 const User = require("../models/User");
 const Post = require("../models/Post");
 
 const PAGE_SIZE_DEFAULT = 30;
 const PAGE_SIZE_MAX = 60;
+const FETCH_MULTIPLIER = 3;
+const MAX_FETCH = 180;
 
 function escapeRegex(value = "") {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function getPage(value) {
   const page = Number.parseInt(value, 10);
-  return Number.isFinite(page) && page > 0 ? page : 1;
+
+  return Number.isFinite(page) && page > 0
+    ? page
+    : 1;
 }
 
 function getLimit(value) {
@@ -25,12 +29,23 @@ function getLimit(value) {
 }
 
 function getUserId(req) {
-  return req.user?._id || req.user?.id;
+  return (
+    req.user?._id ||
+    req.user?.id ||
+    req.userId ||
+    null
+  );
+}
+
+function toStringId(value) {
+  if (!value) {
+    return null;
+  }
+
+  return String(value);
 }
 
 function buildBlockedIds(user) {
-  const ids = new Set();
-
   const blockedUsers = Array.isArray(user?.blockedUsers)
     ? user.blockedUsers
     : [];
@@ -38,6 +53,8 @@ function buildBlockedIds(user) {
   const mutedUsers = Array.isArray(user?.mutedUsers)
     ? user.mutedUsers
     : [];
+
+  const ids = new Set();
 
   [...blockedUsers, ...mutedUsers].forEach((id) => {
     if (id) {
@@ -48,85 +65,91 @@ function buildBlockedIds(user) {
   return [...ids];
 }
 
-function buildExploreFilter(req) {
-  const user = req.user;
-  const userId = getUserId(req);
-  const blockedIds = buildBlockedIds(user);
+function buildFollowingSet(user) {
+  const following = Array.isArray(user?.following)
+    ? user.following
+    : [];
 
-  const filter = {
-    user: {
-      $nin: blockedIds,
-    },
-  };
-
-  return {
-    filter,
-    userId,
-    blockedIds,
-  };
+  return new Set(
+    following
+      .filter(Boolean)
+      .map((id) => String(id))
+  );
 }
 
-async function filterVisiblePosts(posts, req) {
-  const currentUserId = getUserId(req);
-
-  const currentUserFollowing = new Set(
-    (req.user?.following || []).map((id) => String(id))
+function isPostVisible(post, req) {
+  const currentUserId = toStringId(
+    getUserId(req)
   );
 
-  const currentUserBlocked = new Set(
+  const author = post?.user;
+
+  if (!author?._id) {
+    return false;
+  }
+
+  const authorId = String(author._id);
+
+  const blockedIds = new Set(
     buildBlockedIds(req.user)
   );
 
-  return posts.filter((post) => {
-    const user = post.user;
+  if (blockedIds.has(authorId)) {
+    return false;
+  }
 
-    if (!user?._id) {
-      return false;
-    }
+  if (
+    currentUserId &&
+    authorId === currentUserId
+  ) {
+    return true;
+  }
 
-    const authorId = String(user._id);
+  if (author.isPrivate !== true) {
+    return true;
+  }
 
-    if (currentUserBlocked.has(authorId)) {
-      return false;
-    }
+  const following = buildFollowingSet(req.user);
 
-    if (
-      currentUserId &&
-      authorId === String(currentUserId)
-    ) {
-      return true;
-    }
-
-    const isPrivate =
-      user.isPrivate === true;
-
-    if (!isPrivate) {
-      return true;
-    }
-
-    return currentUserFollowing.has(authorId);
-  });
+  return following.has(authorId);
 }
 
 function serializePost(post) {
-  return {
+  if (!post) {
+    return null;
+  }
+
+  const serialized = {
     ...post,
+
+    id:
+      post.id ||
+      post._id?.toString() ||
+      null,
 
     user: post.user
       ? {
           _id: post.user._id,
-          username: post.user.username,
+
+          username:
+            post.user.username || "",
+
           name:
             post.user.name ||
             post.user.fullName ||
             "",
+
           fullName:
             post.user.fullName ||
             post.user.name ||
             "",
-          avatar: post.user.avatar || "",
+
+          avatar:
+            post.user.avatar || "",
+
           isVerified:
             post.user.isVerified === true,
+
           isPrivate:
             post.user.isPrivate === true,
         }
@@ -135,13 +158,50 @@ function serializePost(post) {
     media: Array.isArray(post.media)
       ? post.media.map((media) => ({
           ...media,
+
           type:
-            media.type === "video"
+            media?.type === "video"
               ? "video"
               : "image",
+
+          url:
+            media?.url ||
+            media?.secure_url ||
+            "",
+
+          thumbnail:
+            media?.thumbnail ||
+            media?.thumbnailUrl ||
+            media?.poster ||
+            "",
         }))
       : [],
   };
+
+  return serialized;
+}
+
+function buildExploreFilter(req) {
+  const blockedIds = buildBlockedIds(req.user);
+
+  return {
+    user: {
+      $nin: blockedIds,
+    },
+
+    postType: "post",
+
+    isArchived: {
+      $ne: true,
+    },
+  };
+}
+
+function getFetchLimit(limit) {
+  return Math.min(
+    limit * FETCH_MULTIPLIER,
+    MAX_FETCH
+  );
 }
 
 async function getExplorePosts(req, res) {
@@ -149,19 +209,14 @@ async function getExplorePosts(req, res) {
     const page = getPage(req.query.page);
     const limit = getLimit(req.query.limit);
 
-    const {
-      filter,
-    } = buildExploreFilter(req);
+    const filter = buildExploreFilter(req);
 
-    const fetchLimit = Math.min(
-      limit * 3,
-      180
-    );
+    const fetchLimit = getFetchLimit(limit);
 
     const posts = await Post.find(filter)
       .populate(
         "user",
-        "username fullName avatar isVerified isPrivate followers following"
+        "username name fullName avatar isVerified isPrivate followers following"
       )
       .sort({
         createdAt: -1,
@@ -171,23 +226,22 @@ async function getExplorePosts(req, res) {
       .limit(fetchLimit)
       .lean();
 
-    const visiblePosts =
-      await filterVisiblePosts(
-        posts,
-        req
-      );
+    const visiblePosts = posts.filter((post) =>
+      isPostVisible(post, req)
+    );
 
-    const result =
-      visiblePosts
-        .slice(0, limit)
-        .map(serializePost);
+    const result = visiblePosts
+      .slice(0, limit)
+      .map(serializePost)
+      .filter(Boolean);
 
     const hasMore =
       visiblePosts.length > limit ||
       posts.length >= fetchLimit;
 
-    res.json({
+    return res.json({
       posts: result,
+
       pagination: {
         page,
         limit,
@@ -196,58 +250,57 @@ async function getExplorePosts(req, res) {
     });
   } catch (error) {
     console.error(
-      "Explore posts error:",
+      "EXPLORE POSTS ERROR:",
       error
     );
 
-    res.status(500).json({
-      message:
-        "Failed to load Explore.",
+    return res.status(500).json({
+      message: "Failed to load Explore.",
     });
   }
 }
 
 async function search(req, res) {
   try {
-    const query = (
+    const query = String(
       req.query.q || ""
     ).trim();
+
+    const page = getPage(req.query.page);
+    const limit = getLimit(req.query.limit);
 
     if (!query) {
       return res.json({
         users: [],
         posts: [],
         hashtags: [],
+
         pagination: {
-          page: 1,
-          limit: 30,
+          page,
+          limit,
           hasMore: false,
         },
       });
     }
-
-    const page = getPage(req.query.page);
-    const limit = getLimit(req.query.limit);
 
     const regex = new RegExp(
       escapeRegex(query),
       "i"
     );
 
-    const blockedIds =
-      buildBlockedIds(req.user);
+    const blockedIds = buildBlockedIds(
+      req.user
+    );
 
-    const currentUserFollowing =
-      new Set(
-        (req.user?.following || []).map(
-          (id) => String(id)
-        )
-      );
+    const following = buildFollowingSet(
+      req.user
+    );
 
     const users = await User.find({
       _id: {
         $nin: blockedIds,
       },
+
       $or: [
         {
           username: regex,
@@ -261,34 +314,45 @@ async function search(req, res) {
       ],
     })
       .select(
-        "_id username fullName avatar isPrivate isVerified followers"
+        "_id username name fullName avatar isPrivate isVerified followers"
       )
       .limit(20)
       .lean();
 
-    const visibleUsers =
-      users.filter((user) => {
+    const currentUserId = toStringId(
+      getUserId(req)
+    );
+
+    const visibleUsers = users.filter(
+      (user) => {
         if (!user?.isPrivate) {
           return true;
         }
 
         if (
-          req.user?._id &&
-          String(user._id) ===
-            String(req.user._id)
+          currentUserId &&
+          String(user._id) === currentUserId
         ) {
           return true;
         }
 
-        return currentUserFollowing.has(
+        return following.has(
           String(user._id)
         );
-      });
+      }
+    );
 
-    const posts = await Post.find({
+    const postFilter = {
       user: {
         $nin: blockedIds,
       },
+
+      postType: "post",
+
+      isArchived: {
+        $ne: true,
+      },
+
       $or: [
         {
           caption: regex,
@@ -297,31 +361,38 @@ async function search(req, res) {
           hashtags: regex,
         },
       ],
-    })
+    };
+
+    const fetchLimit = getFetchLimit(limit);
+
+    const posts = await Post.find(postFilter)
       .populate(
         "user",
-        "username fullName avatar isVerified isPrivate followers following"
+        "username name fullName avatar isVerified isPrivate followers following"
       )
       .sort({
         createdAt: -1,
         _id: -1,
       })
       .skip((page - 1) * limit)
-      .limit(limit * 3)
+      .limit(fetchLimit)
       .lean();
 
-    const visiblePosts =
-      await filterVisiblePosts(
-        posts,
-        req
-      );
+    const visiblePosts = posts.filter(
+      (post) =>
+        isPostVisible(post, req)
+    );
 
-    const resultPosts =
-      visiblePosts
-        .slice(0, limit)
-        .map(serializePost);
+    const resultPosts = visiblePosts
+      .slice(0, limit)
+      .map(serializePost)
+      .filter(Boolean);
 
     const hashtags = [];
+    const normalizedQuery =
+      query
+        .replace(/^#/, "")
+        .toLowerCase();
 
     for (const post of visiblePosts) {
       if (!Array.isArray(post.hashtags)) {
@@ -333,28 +404,30 @@ async function search(req, res) {
           continue;
         }
 
-        const cleanTag =
-          String(tag).replace(
-            /^#/,
-            ""
-          );
+        const cleanTag = String(tag)
+          .replace(/^#/, "")
+          .trim();
+
+        if (!cleanTag) {
+          continue;
+        }
 
         if (
-          cleanTag
+          !cleanTag
             .toLowerCase()
-            .includes(
-              query.toLowerCase()
-            )
+            .includes(normalizedQuery)
         ) {
-          if (
-            !hashtags.some(
-              (existing) =>
-                existing.toLowerCase() ===
-                cleanTag.toLowerCase()
-            )
-          ) {
-            hashtags.push(cleanTag);
-          }
+          continue;
+        }
+
+        const exists = hashtags.some(
+          (existing) =>
+            existing.toLowerCase() ===
+            cleanTag.toLowerCase()
+        );
+
+        if (!exists) {
+          hashtags.push(cleanTag);
         }
 
         if (hashtags.length >= 20) {
@@ -367,31 +440,30 @@ async function search(req, res) {
       }
     }
 
-    res.json({
+    const hasMore =
+      visiblePosts.length > limit ||
+      posts.length >= fetchLimit;
+
+    return res.json({
       users: visibleUsers.slice(0, 20),
 
       posts: resultPosts,
 
-      hashtags: hashtags.slice(
-        0,
-        20
-      ),
+      hashtags: hashtags.slice(0, 20),
 
       pagination: {
         page,
         limit,
-        hasMore:
-          visiblePosts.length > limit ||
-          posts.length >= limit * 3,
+        hasMore,
       },
     });
   } catch (error) {
     console.error(
-      "Explore search error:",
+      "EXPLORE SEARCH ERROR:",
       error
     );
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Search failed.",
     });
   }

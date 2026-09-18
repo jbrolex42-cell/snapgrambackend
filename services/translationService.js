@@ -1,75 +1,147 @@
 const axios = require("axios");
 
-const GOOGLE_TRANSLATE_URL =
-  "https://translation.googleapis.com/language/translate/v2";
+const MYMEMORY_URL = "https://api.mymemory.translated.net/get";
 
 const MAX_TRANSLATION_LENGTH = 5000;
 
-function cleanText(value) {
-  if (typeof value !== "string") {
-    return "";
-  }
+const LANGUAGE_ALIASES = {
+  auto: null,
 
-  return value.trim();
-}
+  en: "en",
+  english: "en",
+
+  sw: "sw",
+  kiswahili: "sw",
+  swahili: "sw",
+
+  fr: "fr",
+  french: "fr",
+
+  es: "es",
+  spanish: "es",
+
+  de: "de",
+  german: "de",
+
+  it: "it",
+  italian: "it",
+
+  pt: "pt",
+  portuguese: "pt",
+
+  nl: "nl",
+  dutch: "nl",
+
+  ar: "ar",
+  arabic: "ar",
+
+  hi: "hi",
+  hindi: "hi",
+
+  bn: "bn",
+  bengali: "bn",
+
+  ur: "ur",
+  urdu: "ur",
+
+  zh: "zh-CN",
+  chinese: "zh-CN",
+  "zh-cn": "zh-CN",
+
+  ja: "ja",
+  japanese: "ja",
+
+  ko: "ko",
+  korean: "ko",
+
+  ru: "ru",
+  russian: "ru",
+
+  tr: "tr",
+  turkish: "tr",
+
+  pl: "pl",
+  polish: "pl",
+
+  uk: "uk",
+  ukrainian: "uk",
+
+  vi: "vi",
+  vietnamese: "vi",
+
+  id: "id",
+  indonesian: "id",
+
+  ms: "ms",
+  malay: "ms",
+
+  ro: "ro",
+  romanian: "ro",
+
+  cs: "cs",
+  czech: "cs",
+
+  el: "el",
+  greek: "el",
+
+  he: "he",
+  hebrew: "he",
+
+  fa: "fa",
+  persian: "fa",
+
+  th: "th",
+  thai: "th",
+
+  sv: "sv",
+  swedish: "sv",
+
+  da: "da",
+  danish: "da",
+
+  no: "no",
+  norwegian: "no",
+
+  fi: "fi",
+  finnish: "fi",
+
+  hu: "hu",
+  hungarian: "hu",
+
+  sk: "sk",
+  slovak: "sk",
+
+  bg: "bg",
+  bulgarian: "bg",
+
+  hr: "hr",
+  croatian: "hr",
+
+  ca: "ca",
+  catalan: "ca",
+};
 
 function normalizeLanguage(language) {
-  if (!language || typeof language !== "string") {
-    return "en";
+  if (!language) {
+    return null;
   }
 
-  const value = language.trim().toLowerCase();
+  const value = String(language).trim().toLowerCase();
 
-  const aliases = {
-    english: "en",
-    en: "en",
+  return LANGUAGE_ALIASES[value] || value;
+}
 
-    swahili: "sw",
-    kiswahili: "sw",
-    sw: "sw",
+function cleanText(text) {
+  return String(text || "")
+    .trim()
+    .replace(/\s+/g, " ");
+}
 
-    french: "fr",
-    fr: "fr",
+function buildLanguagePair(sourceLanguage, targetLanguage) {
+  const source = sourceLanguage || "autodetect";
+  const target = targetLanguage;
 
-    spanish: "es",
-    es: "es",
-
-    german: "de",
-    de: "de",
-
-    portuguese: "pt",
-    pt: "pt",
-
-    italian: "it",
-    it: "it",
-
-    arabic: "ar",
-    ar: "ar",
-
-    hindi: "hi",
-    hi: "hi",
-
-    chinese: "zh",
-    "zh-cn": "zh-CN",
-    "zh-hans": "zh-CN",
-
-    japanese: "ja",
-    ja: "ja",
-
-    korean: "ko",
-    ko: "ko",
-
-    russian: "ru",
-    ru: "ru",
-
-    dutch: "nl",
-    nl: "nl",
-
-    turkish: "tr",
-    tr: "tr",
-  };
-
-  return aliases[value] || value;
+  return `${source}|${target}`;
 }
 
 async function translateText({
@@ -80,27 +152,17 @@ async function translateText({
   const clean = cleanText(text);
 
   if (!clean) {
-    throw new Error("Text is required");
+    throw new Error("Text cannot be empty");
   }
 
   if (clean.length > MAX_TRANSLATION_LENGTH) {
     throw new Error(
-      `Text is too long to translate. Maximum length is ${MAX_TRANSLATION_LENGTH} characters.`
-    );
-  }
-
-  const apiKey = process.env.GOOGLE_TRANSLATE_API_KEY;
-
-  if (!apiKey) {
-    throw new Error(
-      "GOOGLE_TRANSLATE_API_KEY is not configured on the server"
+      `Text cannot exceed ${MAX_TRANSLATION_LENGTH} characters`
     );
   }
 
   const target = normalizeLanguage(targetLanguage);
-  const source = sourceLanguage
-    ? normalizeLanguage(sourceLanguage)
-    : null;
+  const source = normalizeLanguage(sourceLanguage);
 
   if (!target) {
     throw new Error("Target language is required");
@@ -115,43 +177,55 @@ async function translateText({
     };
   }
 
-  const params = {
-    key: apiKey,
-    q: clean,
-    target,
-    format: "text",
-  };
+  const langpair = buildLanguagePair(source, target);
 
-  if (source) {
-    params.source = source;
-  }
-
-  const response = await axios.post(
-    GOOGLE_TRANSLATE_URL,
-    null,
-    {
-      params,
+  try {
+    const response = await axios.get(MYMEMORY_URL, {
+      params: {
+        q: clean,
+        langpair,
+      },
       timeout: 15000,
+    });
+
+    const data = response?.data;
+
+    if (!data) {
+      throw new Error("Translation service returned an empty response");
     }
-  );
 
-  const translations =
-    response.data?.data?.translations || [];
+    if (data.responseStatus && Number(data.responseStatus) !== 200) {
+      throw new Error(
+        data.responseDetails || "Translation service request failed"
+      );
+    }
 
-  if (!translations.length) {
-    throw new Error("Translation service returned no translation");
+    const translatedText =
+      data?.responseData?.translatedText?.trim() || "";
+
+    if (!translatedText) {
+      throw new Error("Translation service returned no translated text");
+    }
+
+    return {
+      translatedText,
+      detectedSourceLanguage:
+        data?.responseData?.detectedLanguage || source || null,
+      targetLanguage: target,
+      skipped: false,
+    };
+  } catch (error) {
+    console.error(
+      "MYMEMORY TRANSLATION ERROR:",
+      error?.response?.data || error?.message || error
+    );
+
+    throw new Error(
+      error?.response?.data?.responseDetails ||
+        error?.message ||
+        "Translation failed"
+    );
   }
-
-  const result = translations[0];
-
-  return {
-    translatedText:
-      result.translatedText || clean,
-    detectedSourceLanguage:
-      result.detectedSourceLanguage || source || null,
-    targetLanguage: target,
-    skipped: false,
-  };
 }
 
 module.exports = {

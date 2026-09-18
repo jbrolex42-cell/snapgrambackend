@@ -266,112 +266,247 @@ async function getMessages(req, res) {
   }
 }
 
-async function sendMessage(req, res) {
+const sendMessage = async (
+  req,
+  res
+) => {
   try {
+    const senderId =
+      req.user?._id ||
+      req.user?.id;
+
     const {
-      conversationId,
-      receiverId,
+      receiverDeviceId,
+      senderDeviceId,
+      ciphertext,
+      envelopeType,
+      encryptionVersion,
       replyTo,
     } = req.body;
 
-    const text =
-      normalizeText(req.body.text);
-
-    if (!text) {
-      return res.status(400).json({
-        success: false,
+    if (!senderId) {
+      return res.status(401).json({
         message:
-          "Message cannot be empty",
+          "Authentication required",
       });
     }
 
-    if (
-      !isValidObjectId(
-        conversationId
-      )
-    ) {
+    if (!conversationId) {
       return res.status(400).json({
-        success: false,
         message:
-          "Invalid conversation ID",
+          "Conversation ID is required",
       });
     }
 
-    if (
-      !isValidObjectId(receiverId)
-    ) {
+    if (!receiverId) {
       return res.status(400).json({
-        success: false,
         message:
-          "Invalid receiver ID",
+          "Receiver ID is required",
       });
     }
 
     const conversation =
-      await getConversationForUser(
-        conversationId,
-        req.user._id
-      );
+      await Conversation.findOne({
+        _id: conversationId,
+        participants: senderId,
+      });
 
     if (!conversation) {
       return res.status(404).json({
-        success: false,
         message:
           "Conversation not found",
       });
     }
 
-    const receiver =
-      await User.findById(
-        receiverId
-      ).select("_id");
-
-    if (!receiver) {
-      return res.status(404).json({
-        success: false,
-        message:
-          "Receiver not found",
+    if (!conversationId) {
+      return res.status(400).json({
+        message: "conversationId is required",
       });
     }
 
-    const receiverInConversation =
+    if (!ciphertext) {
+      return res.status(400).json({
+        message:
+          "Encrypted ciphertext is required",
+      });
+    }
+
+    if (
+      !["preKeySignal", "signal"].includes(
+        envelopeType
+      )
+    ) {
+      return res.status(400).json({
+        message:
+          "Invalid encryption envelope",
+      });
+    }
+
+    if (!encryptionVersion) {
+      return res.status(400).json({
+        message:
+          "Encryption version is required",
+      });
+    }
+
+    const conversation =
+      await Conversation.findById(
+        conversationId
+      );
+
+    if (!conversation) {
+      return res.status(404).json({
+        message: "Conversation not found",
+      });
+    }
+
+    const isParticipant =
       conversation.participants.some(
-        (participantId) =>
-          String(participantId) ===
+        (participant) =>
+          String(participant) ===
+          String(userId)
+      );
+
+    if (!isParticipant) {
+      return res.status(403).json({
+        message:
+          "You are not a conversation participant",
+      });
+    }
+
+    const message =
+      await Message.create({
+        conversation:
+          conversationId,
+
+        sender:
+          userId,
+
+        senderDeviceId:
+          Number(senderDeviceId) || 1,
+
+        type: "text",
+
+        ciphertext,
+
+        envelopeType,
+
+        encryptionVersion,
+
+        replyTo:
+          replyTo || null,
+
+        readBy: [userId],
+      });
+
+    conversation.lastMessage =
+      message._id;
+
+    conversation.lastMessageAt =
+      message.createdAt;
+
+    conversation.encryptionEnabled =
+      true;
+
+    conversation.encryptionVersion =
+      encryptionVersion;
+
+    await conversation.save();
+
+    /*
+     * Do not populate plaintext.
+     */
+    return res.status(201).json({
+      success: true,
+
+      message: {
+        id: message._id,
+
+        conversation:
+          message.conversation,
+
+        sender:
+          message.sender,
+
+        senderDeviceId:
+          message.senderDeviceId,
+
+        ciphertext:
+          message.ciphertext,
+
+        envelopeType:
+          message.envelopeType,
+
+        encryptionVersion:
+          message.encryptionVersion,
+
+        replyTo:
+          message.replyTo,
+
+        createdAt:
+          message.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "SEND E2EE MESSAGE ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      message:
+        "Unable to send encrypted message",
+    });
+  }
+}
+    const receiverIsMember =
+      conversation.participants.some(
+        (participant) =>
+          String(participant) ===
           String(receiverId)
       );
 
-    if (!receiverInConversation) {
-      return res.status(400).json({
-        success: false,
+    if (!receiverIsMember) {
+      return res.status(403).json({
         message:
-          "Receiver is not part of this conversation",
+          "Receiver is not a conversation participant",
       });
     }
 
-    let replyMessage = null;
+    const isEncrypted =
+      Boolean(ciphertext);
+
+    if (
+      !isEncrypted &&
+      (!text || !text.trim())
+    ) {
+      return res.status(400).json({
+        message:
+          "Encrypted message or text is required",
+      });
+    }
+
+    if (
+      isEncrypted &&
+      !encryptionVersion
+    ) {
+      return res.status(400).json({
+        message:
+          "Encryption version is required",
+      });
+    }
 
     if (replyTo) {
-      if (!isValidObjectId(replyTo)) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Invalid reply message ID",
-        });
-      }
-
-      replyMessage =
+      const replyMessage =
         await Message.findOne({
           _id: replyTo,
-          conversation:
-            conversationId,
+          conversation: conversationId,
         }).select("_id");
 
       if (!replyMessage) {
         return res.status(400).json({
-          success: false,
           message:
-            "Reply message not found",
+            "Invalid reply message",
         });
       }
     }
@@ -381,22 +516,41 @@ async function sendMessage(req, res) {
         conversation:
           conversationId,
 
-        sender:
-          req.user._id,
+        sender: senderId,
 
-        receiver:
-          receiverId,
+        receiver: receiverId,
 
         type: "text",
 
-        text,
+        /*
+         * Existing plaintext compatibility.
+         * New E2EE messages should leave this empty.
+         */
+        text:
+          isEncrypted
+            ? ""
+            : text.trim(),
+
+        ciphertext:
+          isEncrypted
+            ? ciphertext
+            : null,
+
+        encryptionVersion:
+          isEncrypted
+            ? encryptionVersion
+            : null,
+
+        senderDeviceId:
+          isEncrypted
+            ? senderDeviceId ||
+              null
+            : null,
 
         replyTo:
-          replyMessage?._id || null,
+          replyTo || null,
 
-        readBy: [
-          req.user._id,
-        ],
+        readBy: [senderId],
       });
 
     conversation.lastMessage =
@@ -405,49 +559,32 @@ async function sendMessage(req, res) {
     conversation.lastMessageAt =
       message.createdAt;
 
+    if (isEncrypted) {
+      conversation.encryptionEnabled =
+        true;
+
+      conversation.encryptionVersion =
+        encryptionVersion;
+    }
+
     await conversation.save();
 
     await message.populate(
       "sender",
-      MESSAGE_SENDER_FIELDS
+      "username fullName avatar isVerified"
     );
 
     await message.populate(
       "receiver",
-      MESSAGE_SENDER_FIELDS
+      "username fullName avatar isVerified"
     );
 
-    if (replyMessage) {
-      await message.populate(
-        "replyTo",
-        "text type sender receiver createdAt deleted"
-      );
-    }
-
-    try {
-      if (
-        String(receiverId) !==
-        String(req.user._id)
-      ) {
-        await Notification.create({
-          recipient:
-            receiverId,
-
-          sender:
-            req.user._id,
-
-          type:
-            "message",
-
-          message:
-            message._id,
-        });
-      }
-    } catch (notificationError) {
-      console.error(
-        "MESSAGE NOTIFICATION ERROR:",
-        notificationError
-      );
+    /*
+     * Do NOT return plaintext for encrypted
+     * messages.
+     */
+    if (isEncrypted) {
+      message.text = "";
     }
 
     return res.status(201).json({
@@ -461,12 +598,11 @@ async function sendMessage(req, res) {
     );
 
     return res.status(500).json({
-      success: false,
       message:
         "Failed to send message",
     });
   }
-}
+};
 
 async function markMessagesRead(
   req,

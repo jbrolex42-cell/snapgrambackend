@@ -306,14 +306,6 @@ async function sendGift(req, res) {
       status: "completed",
     });
 
-    /*
-     * This is the accounting record.
-     *
-     * The actual coin-to-currency conversion
-     * should be configured by your payment
-     * business rules rather than hard-coded
-     * in the client.
-     */
     const amount =
       Number(req.body.earningAmount) || 0;
 

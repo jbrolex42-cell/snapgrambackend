@@ -513,12 +513,6 @@ async function requestPayout(req, res) {
           createReference(),
       });
 
-    /*
-     * A production payment provider/webhook
-     * should later change this payout to
-     * processing -> paid/failed.
-     */
-
     return res.status(201).json({
       success: true,
       payout,

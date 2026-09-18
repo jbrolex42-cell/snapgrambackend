@@ -1,24 +1,25 @@
 const express = require("express");
 
-const router = express.Router();
-
 const auth = require("../middleware/auth");
 
 const {
   startCall,
-  updateCall,
   getCall,
   getCallHistory,
-  updateCallStatus,
   getTurnCredentials,
   createGroupCall,
 } = require("../controllers/callController");
+
+const router = express.Router();
 
 router.use(auth);
 
 router.post("/", startCall);
 
-router.get("/history", getCallHistory);
+router.get(
+  "/history",
+  getCallHistory
+);
 
 router.get(
   "/turn-credentials",
@@ -33,16 +34,6 @@ router.post(
 router.get(
   "/:callId",
   getCall
-);
-
-router.patch(
-  "/:callId",
-  updateCall
-);
-
-router.patch(
-  "/:callId/status",
-  updateCallStatus
 );
 
 module.exports = router;

@@ -8,10 +8,6 @@ const cookieParser = require("cookie-parser");
 const { initializeSocket } = require("./sockets/socket");
 const connectDB = require("./config/db");
 
-// --------------------------------------------------
-// ROUTES
-// --------------------------------------------------
-
 const statusRoutes = require("./routes/statusRoutes");
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
@@ -29,6 +25,7 @@ const reelRoutes = require("./routes/reelRoutes");
 const likeRoutes = require("./routes/likeRoutes");
 const messageRoutes = require("./routes/messageRoutes");
 const callRoutes = require("./routes/callRoutes");
+const deviceRoutes = require("./routes/deviceRoutes");
 const uploadRoutes = require("./routes/uploadRoutes");
 const settingsRoutes = require("./routes/settingsRoutes");
 const verificationRoutes = require("./routes/verificationRoutes");
@@ -36,40 +33,24 @@ const subscriptionRoutes = require("./routes/subscriptionRoutes");
 const liveRoutes = require("./routes/liveRoutes");
 const professionalRoutes = require("./routes/professionalRoutes");
 
-// Monetization
 const giftsRoutes = require("./routes/giftsRoutes");
 const earningsRoutes = require("./routes/earningsRoutes");
 const payoutsRoutes = require("./routes/payoutsRoutes");
 const monetizationRoutes = require("./routes/monetizationRoutes");
 const monetizationSetupRoutes = require("./routes/monetizationSetupRoutes");
-// --------------------------------------------------
-// CLOUDINARY
-// --------------------------------------------------
 
 const cloudinary = require("cloudinary").v2;
-
-// --------------------------------------------------
-// APP
-// --------------------------------------------------
 
 const app = express();
 const server = http.createServer(app);
 
 const PORT = process.env.PORT || 5000;
 
-// --------------------------------------------------
-// CLOUDINARY CONFIG
-// --------------------------------------------------
-
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
-
-// --------------------------------------------------
-// MIDDLEWARE
-// --------------------------------------------------
 
 app.use(
   cors({
@@ -92,10 +73,6 @@ app.use(
 
 app.use(cookieParser());
 
-// --------------------------------------------------
-// BASIC ROUTES
-// --------------------------------------------------
-
 app.get("/", (req, res) => {
   res.json({
     name: "Snapgram API",
@@ -110,10 +87,6 @@ app.get("/api/health", (req, res) => {
     database: "connected",
   });
 });
-
-// --------------------------------------------------
-// CORE API ROUTES
-// --------------------------------------------------
 
 app.use("/api/auth", authRoutes);
 
@@ -155,6 +128,11 @@ app.use("/api/likes", likeRoutes);
 
 app.use("/api/messages", messageRoutes);
 
+app.use(
+  "/api/devices",
+  deviceRoutes
+);
+
 app.use("/api/calls", callRoutes);
 
 app.use("/api/settings", settingsRoutes);
@@ -175,10 +153,6 @@ app.use(
   "/api/professional",
   professionalRoutes
 );
-
-// --------------------------------------------------
-// MONETIZATION API ROUTES
-// --------------------------------------------------
 
 app.use(
   "/api/gifts",
@@ -204,9 +178,6 @@ app.use(
   "/api/monetization/setup",
   monetizationSetupRoutes
 );
-// --------------------------------------------------
-// 404 HANDLER
-// --------------------------------------------------
 
 app.use((req, res) => {
   return res.status(404).json({
@@ -215,10 +186,6 @@ app.use((req, res) => {
     path: req.originalUrl,
   });
 });
-
-// --------------------------------------------------
-// GLOBAL ERROR HANDLER
-// --------------------------------------------------
 
 app.use(
   (error, req, res, next) => {
@@ -245,10 +212,6 @@ app.use(
     });
   }
 );
-
-// --------------------------------------------------
-// START SERVER
-// --------------------------------------------------
 
 async function startServer() {
   try {
