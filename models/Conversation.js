@@ -22,11 +22,6 @@ const conversationSchema =
         default: null,
       },
 
-      /*
-       * Conversation-level encryption metadata.
-       *
-       * The actual private keys NEVER belong here.
-       */
       encryptionVersion: {
         type: String,
         default: null,

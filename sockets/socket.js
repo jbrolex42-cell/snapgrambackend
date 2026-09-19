@@ -209,23 +209,9 @@ function initializeSocket(server) {
     }
   );
 
-  /*
-   * userId -> Set(socketId)
-   *
-   * This supports:
-   * - phone
-   * - tablet
-   * - desktop
-   * - reconnecting sockets
-   * - multiple active sessions
-   */
   io.connectedUsers =
     new Map();
 
-  /*
-   * Authenticate every socket
-   * before connection handlers run.
-   */
   io.use(
     (socket, next) => {
       try {
@@ -263,12 +249,6 @@ function initializeSocket(server) {
           );
         }
 
-        /*
-         * NEVER trust a client-provided userId.
-         *
-         * Everything important should use
-         * socket.userId.
-         */
         socket.userId =
           String(userId);
 
@@ -305,30 +285,18 @@ function initializeSocket(server) {
         `Socket connected: ${socket.id} | User: ${userId}`
       );
 
-      /*
-       * Store the socket under the
-       * authenticated user.
-       */
       addSocketToUser(
         io,
         userId,
         socket.id
       );
 
-      /*
-       * Every socket automatically
-       * joins its own private user room.
-       */
       socket.join(
         getUserRoom(userId)
       );
 
       socket.io = io;
 
-      /*
-       * Only announce online when this
-       * was the user's first active socket.
-       */
       if (
         io.connectedUsers
           .get(userId)
@@ -341,30 +309,16 @@ function initializeSocket(server) {
         );
       }
 
-      /*
-       * Register call events ONCE.
-       */
       registerCallSocket(
         io,
         socket
       );
 
-      /*
-       * Register live events ONCE.
-       */
       registerLiveSocket(
         io,
         socket
       );
 
-      /*
-       * --------------------------------------------------
-       * CONVERSATION JOIN
-       * --------------------------------------------------
-       *
-       * Client can request a conversation room,
-       * but server verifies membership first.
-       */
       socket.on(
         "conversation:join",
         async (payload = {}) => {
@@ -426,11 +380,6 @@ function initializeSocket(server) {
         }
       );
 
-      /*
-       * --------------------------------------------------
-       * CONVERSATION LEAVE
-       * --------------------------------------------------
-       */
       socket.on(
         "conversation:leave",
         (payload = {}) => {
@@ -468,16 +417,6 @@ function initializeSocket(server) {
         }
       );
 
-      /*
-       * --------------------------------------------------
-       * TYPING START
-       * --------------------------------------------------
-       *
-       * The client no longer controls
-       * the sender identity.
-       *
-       * Server gets sender from socket.userId.
-       */
       socket.on(
         "typing:start",
         async (payload = {}) => {
@@ -533,11 +472,6 @@ function initializeSocket(server) {
         }
       );
 
-      /*
-       * --------------------------------------------------
-       * TYPING STOP
-       * --------------------------------------------------
-       */
       socket.on(
         "typing:stop",
         async (payload = {}) => {
@@ -593,17 +527,6 @@ function initializeSocket(server) {
         }
       );
 
-      /*
-       * --------------------------------------------------
-       * MESSAGE SEEN
-       * --------------------------------------------------
-       *
-       * No senderId is trusted from the client.
-       *
-       * The server loads the message,
-       * verifies conversation membership,
-       * then determines the actual sender.
-       */
       socket.on(
         "message:seen",
         async (payload = {}) => {
@@ -660,14 +583,6 @@ function initializeSocket(server) {
               return;
             }
 
-            /*
-             * The actual read state should
-             * ultimately be persisted by the
-             * message controller/service.
-             *
-             * For now this socket event only
-             * notifies the sender.
-             */
             emitToUser(
               io,
               senderId,
@@ -687,20 +602,6 @@ function initializeSocket(server) {
         }
       );
 
-      /*
-       * --------------------------------------------------
-       * USER JOIN
-       * --------------------------------------------------
-       *
-       * Kept for compatibility with the
-       * existing mobile client.
-       *
-       * IMPORTANT:
-       * It ignores any requestedUserId.
-       *
-       * A client can only join its OWN
-       * authenticated user room.
-       */
       socket.on(
         "user:join",
         () => {
@@ -717,11 +618,6 @@ function initializeSocket(server) {
         }
       );
 
-      /*
-       * --------------------------------------------------
-       * DISCONNECT
-       * --------------------------------------------------
-       */
       socket.on(
         "disconnect",
         (reason) => {
@@ -733,10 +629,6 @@ function initializeSocket(server) {
                 socket.id
               );
 
-            /*
-             * Only broadcast offline when
-             * the user has NO remaining sockets.
-             */
             if (becameOffline) {
               broadcastUserStatus(
                 io,

@@ -38,6 +38,7 @@ const earningsRoutes = require("./routes/earningsRoutes");
 const payoutsRoutes = require("./routes/payoutsRoutes");
 const monetizationRoutes = require("./routes/monetizationRoutes");
 const monetizationSetupRoutes = require("./routes/monetizationSetupRoutes");
+const conversationPreferenceRoutes = require( "./routes/conversationPreferenceRoutes" );
 
 const cloudinary = require("cloudinary").v2;
 
@@ -178,6 +179,8 @@ app.use(
   "/api/monetization/setup",
   monetizationSetupRoutes
 );
+
+app.use( "/api/conversation-preferences", conversationPreferenceRoutes );
 
 app.use((req, res) => {
   return res.status(404).json({

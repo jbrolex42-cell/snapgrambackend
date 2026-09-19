@@ -12,15 +12,33 @@ function getUserId(req) {
   );
 }
 
-function normalizeBase64(value) {
+function normalizeBase64(value, fieldName = "key data") {
   if (!value) {
-    throw new Error("Missing key data");
+    throw new Error(`Missing ${fieldName}`);
   }
 
-  return String(value).trim();
+  const normalized = String(value).trim();
+
+  if (!normalized) {
+    throw new Error(`Missing ${fieldName}`);
+  }
+
+  return normalized;
+}
+
+function normalizePositiveInteger(value, fieldName) {
+  const number = Number(value);
+
+  if (!Number.isInteger(number) || number < 1) {
+    throw new Error(`Invalid ${fieldName}`);
+  }
+
+  return number;
 }
 
 async function registerDevice(req, res) {
+  const mongoSession = await mongoose.startSession();
+
   try {
     const userId = getUserId(req);
 
@@ -35,18 +53,29 @@ async function registerDevice(req, res) {
       registrationId,
       identityKey,
       signedPreKey,
+      kyberPreKey,
       preKeys,
-    } = req.body;
+    } = req.body || {};
 
-    if (!deviceId) {
+    if (
+      deviceId === undefined ||
+      deviceId === null ||
+      !Number.isInteger(Number(deviceId)) ||
+      Number(deviceId) < 1
+    ) {
       return res.status(400).json({
-        message: "deviceId is required",
+        message: "Valid deviceId is required",
       });
     }
 
-    if (!registrationId) {
+    if (
+      registrationId === undefined ||
+      registrationId === null ||
+      !Number.isInteger(Number(registrationId)) ||
+      Number(registrationId) < 1
+    ) {
       return res.status(400).json({
-        message: "registrationId is required",
+        message: "Valid registrationId is required",
       });
     }
 
@@ -67,90 +96,175 @@ async function registerDevice(req, res) {
       });
     }
 
+    if (
+      !kyberPreKey ||
+      kyberPreKey.keyId === undefined ||
+      !kyberPreKey.publicKey ||
+      !kyberPreKey.signature
+    ) {
+      return res.status(400).json({
+        message: "Invalid Kyber pre-key",
+      });
+    }
+
     if (!Array.isArray(preKeys)) {
       return res.status(400).json({
         message: "preKeys must be an array",
       });
     }
 
-    const session = await mongoose.startSession();
+    const normalizedDeviceId = normalizePositiveInteger(
+      deviceId,
+      "deviceId"
+    );
 
-    try {
-      let result;
+    const normalizedRegistrationId = normalizePositiveInteger(
+      registrationId,
+      "registrationId"
+    );
 
-      await session.withTransaction(async () => {
-        const device = await Device.findOneAndUpdate(
-          {
-            user: userId,
-            deviceId,
-          },
-          {
-            $set: {
-              registrationId,
-              identityKey: normalizeBase64(identityKey),
-              signedPreKey: {
-                keyId: signedPreKey.keyId,
-                publicKey: normalizeBase64(
-                  signedPreKey.publicKey
-                ),
-                signature: normalizeBase64(
-                  signedPreKey.signature
-                ),
-                createdAt: new Date(),
-              },
-              isActive: true,
-              lastSeenAt: new Date(),
-            },
-          },
-          {
-            new: true,
-            upsert: true,
-            setDefaultsOnInsert: true,
-            session,
-          }
+    const normalizedSignedPreKeyId = normalizePositiveInteger(
+      signedPreKey.keyId,
+      "signedPreKey.keyId"
+    );
+
+    const normalizedKyberPreKeyId = normalizePositiveInteger(
+      kyberPreKey.keyId,
+      "kyberPreKey.keyId"
+    );
+
+    const normalizedPreKeys = preKeys.map((key, index) => {
+      if (!key || key.keyId === undefined || !key.publicKey) {
+        throw new Error(
+          `Invalid pre-key at index ${index}`
         );
+      }
 
-        await PreKey.deleteMany(
-          {
-            device: device._id,
-          },
-          {
-            session,
-          }
-        );
+      return {
+        keyId: normalizePositiveInteger(
+          key.keyId,
+          `preKeys[${index}].keyId`
+        ),
 
-        if (preKeys.length > 0) {
-          const documents = preKeys.map((key) => ({
-            device: device._id,
-            keyId: key.keyId,
-            publicKey: normalizeBase64(
-              key.publicKey
-            ),
-          }));
+        publicKey: normalizeBase64(
+          key.publicKey,
+          `preKeys[${index}].publicKey`
+        ),
+      };
+    });
 
-          await PreKey.insertMany(
-            documents,
-            {
-              session,
-              ordered: true,
-            }
-          );
-        }
+    let result;
 
-        result = device;
-      });
-
-      return res.status(200).json({
-        success: true,
-        device: {
-          id: result._id,
-          deviceId: result.deviceId,
-          registrationId: result.registrationId,
+    await mongoSession.withTransaction(async () => {
+      const device = await Device.findOneAndUpdate(
+        {
+          user: userId,
+          deviceId: normalizedDeviceId,
         },
-      });
-    } finally {
-      await session.endSession();
-    }
+        {
+          $set: {
+            registrationId: normalizedRegistrationId,
+
+            identityKey: normalizeBase64(
+              identityKey,
+              "identityKey"
+            ),
+
+            signedPreKey: {
+              keyId: normalizedSignedPreKeyId,
+
+              publicKey: normalizeBase64(
+                signedPreKey.publicKey,
+                "signedPreKey.publicKey"
+              ),
+
+              signature: normalizeBase64(
+                signedPreKey.signature,
+                "signedPreKey.signature"
+              ),
+
+              createdAt: signedPreKey.createdAt
+                ? new Date(signedPreKey.createdAt)
+                : new Date(),
+
+              expiresAt: signedPreKey.expiresAt
+                ? new Date(signedPreKey.expiresAt)
+                : null,
+            },
+
+            kyberPreKey: {
+              keyId: normalizedKyberPreKeyId,
+
+              publicKey: normalizeBase64(
+                kyberPreKey.publicKey,
+                "kyberPreKey.publicKey"
+              ),
+
+              signature: normalizeBase64(
+                kyberPreKey.signature,
+                "kyberPreKey.signature"
+              ),
+
+              createdAt: kyberPreKey.createdAt
+                ? new Date(kyberPreKey.createdAt)
+                : new Date(),
+
+              expiresAt: kyberPreKey.expiresAt
+                ? new Date(kyberPreKey.expiresAt)
+                : null,
+            },
+
+            isActive: true,
+            lastSeenAt: new Date(),
+          },
+        },
+        {
+          new: true,
+          upsert: true,
+          setDefaultsOnInsert: true,
+          session: mongoSession,
+        }
+      );
+
+      await PreKey.deleteMany(
+        {
+          device: device._id,
+        },
+        {
+          session: mongoSession,
+        }
+      );
+
+      if (normalizedPreKeys.length > 0) {
+        const documents = normalizedPreKeys.map((key) => ({
+          device: device._id,
+          keyId: key.keyId,
+          publicKey: key.publicKey,
+          consumed: false,
+          consumedAt: null,
+        }));
+
+        await PreKey.insertMany(
+          documents,
+          {
+            session: mongoSession,
+            ordered: true,
+          }
+        );
+      }
+
+      result = device;
+    });
+
+    return res.status(200).json({
+      success: true,
+
+      device: {
+        id: result._id,
+        deviceId: result.deviceId,
+        registrationId: result.registrationId,
+      },
+    });
   } catch (error) {
     console.error(
       "REGISTER DEVICE ERROR:",
@@ -160,6 +274,8 @@ async function registerDevice(req, res) {
     return res.status(500).json({
       message: "Unable to register device",
     });
+  } finally {
+    await mongoSession.endSession();
   }
 }
 
@@ -189,7 +305,7 @@ async function getUserDevices(req, res) {
       isActive: true,
     })
       .select(
-        "deviceId registrationId identityKey signedPreKey"
+        "deviceId registrationId identityKey signedPreKey kyberPreKey"
       )
       .lean();
 
@@ -211,17 +327,46 @@ async function getUserDevices(req, res) {
 
 async function getDevicePreKeyBundle(req, res) {
   try {
+    const requesterId = getUserId(req);
     const targetUserId = req.params.userId;
-    const requestedDeviceId = req.query.deviceId
-      ? Number(req.query.deviceId)
-      : null;
+
+    if (!requesterId) {
+      return res.status(401).json({
+        message: "Authentication required",
+      });
+    }
+
+    if (
+      !mongoose.Types.ObjectId.isValid(
+        targetUserId
+      )
+    ) {
+      return res.status(400).json({
+        message: "Invalid user id",
+      });
+    }
+
+    const requestedDeviceId =
+      req.query.deviceId !== undefined
+        ? Number(req.query.deviceId)
+        : null;
+
+    if (
+      requestedDeviceId !== null &&
+      (!Number.isInteger(requestedDeviceId) ||
+        requestedDeviceId < 1)
+    ) {
+      return res.status(400).json({
+        message: "Invalid device id",
+      });
+    }
 
     const deviceQuery = {
       user: targetUserId,
       isActive: true,
     };
 
-    if (requestedDeviceId) {
+    if (requestedDeviceId !== null) {
       deviceQuery.deviceId =
         requestedDeviceId;
     }
@@ -230,13 +375,24 @@ async function getDevicePreKeyBundle(req, res) {
       deviceQuery
     )
       .select(
-        "deviceId registrationId identityKey signedPreKey"
+        "_id deviceId registrationId identityKey signedPreKey kyberPreKey"
       )
       .lean();
 
     if (!device) {
       return res.status(404).json({
         message: "Device not found",
+      });
+    }
+
+    if (
+      !device.identityKey ||
+      !device.signedPreKey ||
+      !device.kyberPreKey
+    ) {
+      return res.status(409).json({
+        message:
+          "Device encryption keys are incomplete",
       });
     }
 
@@ -256,6 +412,7 @@ async function getDevicePreKeyBundle(req, res) {
           sort: {
             createdAt: 1,
           },
+
           new: true,
         }
       ).lean();
@@ -267,7 +424,8 @@ async function getDevicePreKeyBundle(req, res) {
         registrationId:
           device.registrationId,
 
-        deviceId: device.deviceId,
+        deviceId:
+          device.deviceId,
 
         identityKey:
           device.identityKey,
@@ -283,9 +441,22 @@ async function getDevicePreKeyBundle(req, res) {
             device.signedPreKey.signature,
         },
 
+        kyberPreKey: {
+          keyId:
+            device.kyberPreKey.keyId,
+
+          publicKey:
+            device.kyberPreKey.publicKey,
+
+          signature:
+            device.kyberPreKey.signature,
+        },
+
         preKey: preKey
           ? {
-              keyId: preKey.keyId,
+              keyId:
+                preKey.keyId,
+
               publicKey:
                 preKey.publicKey,
             }
@@ -309,14 +480,23 @@ async function replenishPreKeys(req, res) {
   try {
     const userId = getUserId(req);
 
-    const {
-      deviceId,
-      preKeys,
-    } = req.body;
-
     if (!userId) {
       return res.status(401).json({
         message: "Authentication required",
+      });
+    }
+
+    const {
+      deviceId,
+      preKeys,
+    } = req.body || {};
+
+    if (
+      deviceId === undefined ||
+      deviceId === null
+    ) {
+      return res.status(400).json({
+        message: "deviceId is required",
       });
     }
 
@@ -326,9 +506,15 @@ async function replenishPreKeys(req, res) {
       });
     }
 
+    const normalizedDeviceId =
+      normalizePositiveInteger(
+        deviceId,
+        "deviceId"
+      );
+
     const device = await Device.findOne({
       user: userId,
-      deviceId,
+      deviceId: normalizedDeviceId,
       isActive: true,
     });
 
@@ -339,13 +525,34 @@ async function replenishPreKeys(req, res) {
     }
 
     const documents = preKeys.map(
-      (key) => ({
-        device: device._id,
-        keyId: key.keyId,
-        publicKey: normalizeBase64(
-          key.publicKey
-        ),
-      })
+      (key, index) => {
+        if (
+          !key ||
+          key.keyId === undefined ||
+          !key.publicKey
+        ) {
+          throw new Error(
+            `Invalid pre-key at index ${index}`
+          );
+        }
+
+        return {
+          device: device._id,
+
+          keyId: normalizePositiveInteger(
+            key.keyId,
+            `preKeys[${index}].keyId`
+          ),
+
+          publicKey: normalizeBase64(
+            key.publicKey,
+            `preKeys[${index}].publicKey`
+          ),
+
+          consumed: false,
+          consumedAt: null,
+        };
+      }
     );
 
     if (documents.length > 0) {
@@ -366,6 +573,13 @@ async function replenishPreKeys(req, res) {
       "REPLENISH PREKEY ERROR:",
       error
     );
+
+    if (error?.code === 11000) {
+      return res.status(409).json({
+        message:
+          "One or more pre-key IDs already exist",
+      });
+    }
 
     return res.status(500).json({
       message:

@@ -54,33 +54,17 @@ const messageSchema = new mongoose.Schema(
       required: true,
     },
 
-    /*
-     * NEVER store plaintext.
-     */
     ciphertext: {
       type: String,
       required: true,
     },
 
-    /*
-     * Example:
-     *
-     * signal-v1
-     *
-     * This lets us migrate protocol versions later.
-     */
     encryptionVersion: {
       type: String,
       required: true,
       default: "signal-v1",
     },
 
-    /*
-     * The encrypted message envelope may contain
-     * protocol metadata required by the receiver.
-     *
-     * It is opaque to the backend.
-     */
     envelopeType: {
       type: String,
       enum: [

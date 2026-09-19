@@ -1,5 +1,69 @@
 const mongoose = require("mongoose");
 
+const signedPreKeySchema = new mongoose.Schema(
+  {
+    keyId: {
+      type: Number,
+      required: true,
+    },
+
+    publicKey: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    signature: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+
+    expiresAt: {
+      type: Date,
+      default: null,
+    },
+  },
+  { _id: false }
+);
+
+const kyberPreKeySchema = new mongoose.Schema(
+  {
+    keyId: {
+      type: Number,
+      required: true,
+    },
+
+    publicKey: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    signature: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+
+    expiresAt: {
+      type: Date,
+      default: null,
+    },
+  },
+  { _id: false }
+);
+
 const deviceSchema = new mongoose.Schema(
   {
     user: {
@@ -28,30 +92,13 @@ const deviceSchema = new mongoose.Schema(
     },
 
     signedPreKey: {
-      keyId: {
-        type: Number,
-        required: true,
-      },
+      type: signedPreKeySchema,
+      required: true,
+    },
 
-      publicKey: {
-        type: String,
-        required: true,
-      },
-
-      signature: {
-        type: String,
-        required: true,
-      },
-
-      createdAt: {
-        type: Date,
-        default: Date.now,
-      },
-
-      expiresAt: {
-        type: Date,
-        default: null,
-      },
+    kyberPreKey: {
+      type: kyberPreKeySchema,
+      required: true,
     },
 
     isActive: {
