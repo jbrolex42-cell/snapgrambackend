@@ -66,7 +66,6 @@ const locationSchema = new mongoose.Schema(
 
 const postSchema = new mongoose.Schema(
   {
-
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -184,7 +183,6 @@ const postSchema = new mongoose.Schema(
       default: null,
     },
   },
-
   {
     timestamps: true,
 
@@ -198,14 +196,49 @@ const postSchema = new mongoose.Schema(
   }
 );
 
+/*
+ * PROFILE
+ * /posts/mine
+ * /posts/reels
+ *
+ * Also supports sorting newest first.
+ */
 postSchema.index({
   user: 1,
   postType: 1,
+  isArchived: 1,
   createdAt: -1,
 });
 
+/*
+ * SAVED POSTS
+ */
 postSchema.index({
   savedBy: 1,
+  createdAt: -1,
+});
+
+/*
+ * LIKED POSTS
+ */
+postSchema.index({
+  likes: 1,
+  createdAt: -1,
+});
+
+/*
+ * TAGGED POSTS
+ */
+postSchema.index({
+  taggedUsers: 1,
+  createdAt: -1,
+});
+
+/*
+ * REPOST LOOKUPS
+ */
+postSchema.index({
+  repostOf: 1,
   createdAt: -1,
 });
 
@@ -217,14 +250,9 @@ postSchema.index({
 
 postSchema.index({
   user: 1,
-  isArchived: 1,
-  archivedAt: -1,
-});
-
-postSchema.index({
-  user: 1,
   postType: 1,
   isArchived: 1,
+  visibility: 1,
   createdAt: -1,
 });
 

@@ -8,6 +8,7 @@ const cookieParser = require("cookie-parser");
 const { initializeSocket } = require("./sockets/socket");
 const connectDB = require("./config/db");
 
+const compression = require("./middleware/compression");
 const statusRoutes = require("./routes/statusRoutes");
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
@@ -88,6 +89,8 @@ app.get("/api/health", (req, res) => {
     database: "connected",
   });
 });
+
+app.use(compression);
 
 app.use("/api/auth", authRoutes);
 
