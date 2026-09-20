@@ -3,10 +3,6 @@ const mongoose = require("mongoose");
 const Conversation = require("../models/Conversation");
 const ConversationPreference = require("../models/ConversationPreference");
 
-/* -------------------------------------------------------------------------- */
-/* Helpers                                                                    */
-/* -------------------------------------------------------------------------- */
-
 function getUserId(req) {
   return (
     req.user?._id?.toString() ||
@@ -40,10 +36,6 @@ function sendError(res, error, fallbackMessage) {
     message: error.message || fallbackMessage,
   });
 }
-
-/* -------------------------------------------------------------------------- */
-/* Conversation access                                                        */
-/* -------------------------------------------------------------------------- */
 
 async function getUserConversation(req) {
   const userId = getUserId(req);
@@ -84,10 +76,6 @@ async function getUserConversation(req) {
     conversation,
   };
 }
-
-/* -------------------------------------------------------------------------- */
-/* Preference serialization                                                    */
-/* -------------------------------------------------------------------------- */
 
 function serializePreference(preference) {
   if (!preference) {
@@ -131,10 +119,6 @@ function serializePreference(preference) {
   };
 }
 
-/* -------------------------------------------------------------------------- */
-/* Get or create preference                                                   */
-/* -------------------------------------------------------------------------- */
-
 async function getOrCreatePreference(
   conversationId,
   userId
@@ -163,10 +147,6 @@ async function getOrCreatePreference(
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Get conversation preferences                                               */
-/* -------------------------------------------------------------------------- */
-
 exports.getConversationPreferences = async (req, res) => {
   try {
     const { userId, conversationId } =
@@ -194,10 +174,6 @@ exports.getConversationPreferences = async (req, res) => {
     );
   }
 };
-
-/* -------------------------------------------------------------------------- */
-/* Mute conversation                                                          */
-/* -------------------------------------------------------------------------- */
 
 exports.updateMute = async (req, res) => {
   try {
@@ -265,10 +241,6 @@ exports.updateMute = async (req, res) => {
   }
 };
 
-/* -------------------------------------------------------------------------- */
-/* Restrict conversation                                                      */
-/* -------------------------------------------------------------------------- */
-
 exports.updateRestriction = async (req, res) => {
   try {
     const { userId, conversationId } =
@@ -309,10 +281,6 @@ exports.updateRestriction = async (req, res) => {
     );
   }
 };
-
-/* -------------------------------------------------------------------------- */
-/* Conversation theme                                                         */
-/* -------------------------------------------------------------------------- */
 
 exports.updateTheme = async (req, res) => {
   try {
@@ -365,10 +333,6 @@ exports.updateTheme = async (req, res) => {
   }
 };
 
-/* -------------------------------------------------------------------------- */
-/* Nickname                                                                    */
-/* -------------------------------------------------------------------------- */
-
 exports.updateNickname = async (req, res) => {
   try {
     const { userId, conversationId } =
@@ -419,10 +383,6 @@ exports.updateNickname = async (req, res) => {
     );
   }
 };
-
-/* -------------------------------------------------------------------------- */
-/* Disappearing messages                                                      */
-/* -------------------------------------------------------------------------- */
 
 exports.updateDisappearingMessages = async (
   req,
@@ -477,10 +437,6 @@ exports.updateDisappearingMessages = async (
     );
   }
 };
-
-/* -------------------------------------------------------------------------- */
-/* Reset conversation preferences                                             */
-/* -------------------------------------------------------------------------- */
 
 exports.resetConversationPreferences = async (
   req,

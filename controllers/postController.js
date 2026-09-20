@@ -588,15 +588,6 @@ async function createPost(req, res) {
       }
     }
 
-    /*
-     * Upload media concurrently.
-     *
-     * This is significantly faster than:
-     *
-     * for (...) {
-     *   await upload(...)
-     * }
-     */
     const uploadResults =
       await Promise.all(
         req.files.map(

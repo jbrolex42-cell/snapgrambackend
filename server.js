@@ -15,6 +15,7 @@ const userRoutes = require("./routes/userRoutes");
 const storyRoutes = require("./routes/storyRoutes");
 const highlightRoutes = require("./routes/highlightRoutes");
 const postRoutes = require("./routes/postRoutes");
+const musicRoutes = require("./routes/musicRoutes");
 const commentRoutes = require("./routes/commentRoutes");
 const translationRoutes = require("./routes/translationRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
@@ -61,6 +62,8 @@ app.use(
   })
 );
 
+app.use(compression);
+
 app.use(
   express.json({
     limit: "10mb",
@@ -90,8 +93,6 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-app.use(compression);
-
 app.use("/api/auth", authRoutes);
 
 app.use("/api/users", userRoutes);
@@ -105,6 +106,8 @@ app.use("/api/stories", storyRoutes);
 app.use("/api/highlights", highlightRoutes);
 
 app.use("/api/posts", postRoutes);
+
+app.use("/api/music", musicRoutes);
 
 app.use("/api/comments", commentRoutes);
 

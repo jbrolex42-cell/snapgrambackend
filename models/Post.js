@@ -182,6 +182,62 @@ const postSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+
+    music: {
+      trackId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "MusicTrack",
+        default: null,
+      },
+
+      title: {
+        type: String,
+        default: "",
+        trim: true,
+      },
+
+      artist: {
+        type: String,
+        default: "",
+        trim: true,
+      },
+
+      album: {
+        type: String,
+        default: "",
+        trim: true,
+      },
+
+      artworkUrl: {
+        type: String,
+        default: "",
+        trim: true,
+      },
+
+      provider: {
+        type: String,
+        default: "snapgram",
+        trim: true,
+      },
+ 
+      providerTrackId: {
+        type: String,
+        default: "",
+        trim: true,
+      },
+
+      startMs: {
+        type: Number,
+        default: 0,
+         min: 0,
+      },
+
+      durationMs: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+    },
   },
   {
     timestamps: true,
@@ -196,13 +252,6 @@ const postSchema = new mongoose.Schema(
   }
 );
 
-/*
- * PROFILE
- * /posts/mine
- * /posts/reels
- *
- * Also supports sorting newest first.
- */
 postSchema.index({
   user: 1,
   postType: 1,
@@ -210,33 +259,21 @@ postSchema.index({
   createdAt: -1,
 });
 
-/*
- * SAVED POSTS
- */
 postSchema.index({
   savedBy: 1,
   createdAt: -1,
 });
 
-/*
- * LIKED POSTS
- */
 postSchema.index({
   likes: 1,
   createdAt: -1,
 });
 
-/*
- * TAGGED POSTS
- */
 postSchema.index({
   taggedUsers: 1,
   createdAt: -1,
 });
 
-/*
- * REPOST LOOKUPS
- */
 postSchema.index({
   repostOf: 1,
   createdAt: -1,
@@ -253,6 +290,11 @@ postSchema.index({
   postType: 1,
   isArchived: 1,
   visibility: 1,
+  createdAt: -1,
+});
+
+postSchema.index({
+  "music.trackId": 1,
   createdAt: -1,
 });
 
