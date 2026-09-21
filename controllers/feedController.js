@@ -12,6 +12,7 @@ async function getHomeFeed(req, res) {
       !mongoose.Types.ObjectId.isValid(userId)
     ) {
       return res.status(401).json({
+        success: false,
         message: "Invalid authenticated user.",
       });
     }
@@ -22,6 +23,7 @@ async function getHomeFeed(req, res) {
 
     if (!currentUser) {
       return res.status(404).json({
+        success: false,
         message: "User not found.",
       });
     }
@@ -35,6 +37,11 @@ async function getHomeFeed(req, res) {
         )
       : [];
 
+    /*
+     * The home feed contains:
+     * - the authenticated user's own posts
+     * - posts from people they follow
+     */
     const feedUserIds = [
       userId,
       ...followingIds,
@@ -49,13 +56,32 @@ async function getHomeFeed(req, res) {
       ).values(),
     ];
 
+    /*
+     * Include both:
+     * - normal posts
+     * - reels
+     *
+     * Stories are NOT Posts and therefore do not belong here.
+     */
     const posts = await Post.find({
       user: {
         $in: uniqueFeedUserIds,
       },
 
-      postType: "post",
-      isArchived: false,
+      postType: {
+        $in: ["post", "reel"],
+      },
+
+      $or: [
+        {
+          isArchived: {
+            $exists: false,
+          },
+        },
+        {
+          isArchived: false,
+        },
+      ],
     })
       .populate(
         "user",
@@ -84,14 +110,38 @@ async function getHomeFeed(req, res) {
           ? post.savedBy
           : [];
 
+        const media = Array.isArray(
+          post.media
+        )
+          ? post.media
+          : [];
+
         return {
           ...post,
 
-          id: post._id?.toString(),
+          id: post._id
+            ? post._id.toString()
+            : null,
+
+          _id: post._id
+            ? post._id.toString()
+            : null,
+
+          postType:
+            post.postType || "post",
+
+          media,
 
           likesCount: likes.length,
 
           liked: likes.some(
+            (id) =>
+              id &&
+              id.toString() ===
+                currentUserId
+          ),
+
+          isLiked: likes.some(
             (id) =>
               id &&
               id.toString() ===
@@ -104,20 +154,48 @@ async function getHomeFeed(req, res) {
               id.toString() ===
                 currentUserId
           ),
+
+          isSaved: savedBy.some(
+            (id) =>
+              id &&
+              id.toString() ===
+                currentUserId
+          ),
         };
       }
     );
 
+    console.log(
+      "[FEED] HOME FEED:",
+      {
+        userId: currentUserId,
+        followingCount:
+          followingIds.length,
+        userCount:
+          uniqueFeedUserIds.length,
+        postCount:
+          formattedPosts.length,
+        types:
+          formattedPosts.map(
+            (post) =>
+              post.postType
+          ),
+      }
+    );
+
     return res.status(200).json({
+      success: true,
       posts: formattedPosts,
+      count: formattedPosts.length,
     });
   } catch (error) {
     console.error(
-      "HOME FEED ERROR:",
+      "[FEED] HOME FEED ERROR:",
       error
     );
 
     return res.status(500).json({
+      success: false,
       message:
         "Failed to load home feed.",
     });

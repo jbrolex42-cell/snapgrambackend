@@ -32,14 +32,18 @@ const USER_FIELDS = [
 const COMMENT_USER_FIELDS =
   "username avatar fullName isVerified verified";
 
+/* =========================================================
+   HELPERS
+========================================================= */
+
 function getUserId(req) {
-  const value =
+  const id =
     req.user?._id ||
     req.user?.id ||
     req.userId ||
     null;
 
-  return value ? String(value) : null;
+  return id ? String(id) : null;
 }
 
 function requireUserId(req, res) {
@@ -67,29 +71,26 @@ function requireUserId(req, res) {
 }
 
 function getPagination(req) {
-  const requestedPage = Number.parseInt(
+  const pageValue = Number.parseInt(
     req.query?.page,
     10
   );
 
-  const requestedLimit = Number.parseInt(
+  const limitValue = Number.parseInt(
     req.query?.limit,
     10
   );
 
   const page =
-    Number.isFinite(requestedPage) &&
-    requestedPage > 0
-      ? requestedPage
+    Number.isFinite(pageValue) &&
+    pageValue > 0
+      ? pageValue
       : DEFAULT_PAGE;
 
   const limit =
-    Number.isFinite(requestedLimit) &&
-    requestedLimit > 0
-      ? Math.min(
-          requestedLimit,
-          MAX_LIMIT
-        )
+    Number.isFinite(limitValue) &&
+    limitValue > 0
+      ? Math.min(limitValue, MAX_LIMIT)
       : DEFAULT_LIMIT;
 
   return {
@@ -108,9 +109,7 @@ function parseJson(value, fallback = null) {
     return fallback;
   }
 
-  if (
-    typeof value === "object"
-  ) {
+  if (typeof value === "object") {
     return value;
   }
 
@@ -130,7 +129,7 @@ function normalizeLocation(value) {
     };
   }
 
-  const parsed = parseJson(value, null);
+  const parsed = parseJson(value);
 
   if (
     parsed &&
@@ -155,15 +154,13 @@ function normalizeLocation(value) {
         parsed.name || ""
       ).trim(),
 
-      latitude:
-        Number.isFinite(latitude)
-          ? latitude
-          : null,
+      latitude: Number.isFinite(latitude)
+        ? latitude
+        : null,
 
-      longitude:
-        Number.isFinite(longitude)
-          ? longitude
-          : null,
+      longitude: Number.isFinite(longitude)
+        ? longitude
+        : null,
     };
   }
 
@@ -179,7 +176,7 @@ function normalizeTaggedUsers(value) {
     return [];
   }
 
-  const parsed = parseJson(value, null);
+  const parsed = parseJson(value);
 
   const values = Array.isArray(parsed)
     ? parsed
@@ -222,8 +219,9 @@ function normalizeVisibility(value) {
     .toLowerCase();
 
   if (
-    visibility === "followers" ||
-    visibility === "private"
+    ["public", "followers", "private"].includes(
+      visibility
+    )
   ) {
     return visibility;
   }
@@ -232,13 +230,13 @@ function normalizeVisibility(value) {
 }
 
 function normalizePostType(value) {
-  const type = String(
+  const postType = String(
     value || "post"
   )
     .trim()
     .toLowerCase();
 
-  return type === "reel"
+  return postType === "reel"
     ? "reel"
     : "post";
 }
@@ -261,12 +259,8 @@ function normalizeObjectIds(values) {
   }
 
   return values
-    .filter(
-      (value) =>
-        value &&
-        mongoose.Types.ObjectId.isValid(
-          value
-        )
+    .filter((value) =>
+      mongoose.Types.ObjectId.isValid(value)
     )
     .map(
       (value) =>
@@ -319,31 +313,45 @@ function addUserState(post, userId) {
     return null;
   }
 
-  const plain =
+  const data =
     typeof post.toObject === "function"
       ? post.toObject()
       : post;
 
-  const likes = Array.isArray(plain.likes)
-    ? plain.likes
+  const likes = Array.isArray(data.likes)
+    ? data.likes
     : [];
 
   const savedBy = Array.isArray(
-    plain.savedBy
+    data.savedBy
   )
-    ? plain.savedBy
+    ? data.savedBy
     : [];
 
-  const liked = hasId(likes, userId);
-  const saved = hasId(savedBy, userId);
+  const liked = hasId(
+    likes,
+    userId
+  );
+
+  const saved = hasId(
+    savedBy,
+    userId
+  );
 
   return {
-    ...plain,
+    ...data,
 
     id:
-      plain._id?.toString() ||
-      plain.id ||
+      data._id?.toString() ||
+      data.id ||
       null,
+
+    postType:
+      data.postType || "post",
+
+    media: Array.isArray(data.media)
+      ? data.media
+      : [],
 
     liked,
     isLiked: liked,
@@ -354,13 +362,13 @@ function addUserState(post, userId) {
     likesCount: likes.length,
 
     commentsCount:
-      Number(plain.commentsCount) || 0,
+      Number(data.commentsCount) || 0,
 
     sharesCount:
-      Number(plain.sharesCount) || 0,
+      Number(data.sharesCount) || 0,
 
     repostsCount:
-      Number(plain.repostsCount) || 0,
+      Number(data.repostsCount) || 0,
   };
 }
 
@@ -385,6 +393,10 @@ function isVideoFile(file) {
   );
 }
 
+/* =========================================================
+   CLOUDINARY
+========================================================= */
+
 function uploadToCloudinary(file) {
   if (!file?.buffer) {
     return Promise.reject(
@@ -394,18 +406,17 @@ function uploadToCloudinary(file) {
     );
   }
 
-  const isVideo = isVideoFile(file);
+  const resourceType = isVideoFile(file)
+    ? "video"
+    : "image";
 
   return new Promise(
     (resolve, reject) => {
-      const uploadStream =
+      const stream =
         cloudinary.uploader.upload_stream(
           {
             folder: "snapgram/posts",
-
-            resource_type: isVideo
-              ? "video"
-              : "image",
+            resource_type: resourceType,
           },
           (error, result) => {
             if (error) {
@@ -419,7 +430,6 @@ function uploadToCloudinary(file) {
                   "Cloudinary did not return a secure URL."
                 )
               );
-
               return;
             }
 
@@ -429,12 +439,14 @@ function uploadToCloudinary(file) {
 
       streamifier
         .createReadStream(file.buffer)
-        .pipe(uploadStream);
+        .pipe(stream);
     }
   );
 }
 
-async function destroyCloudinaryMedia(media) {
+async function destroyCloudinaryMedia(
+  media
+) {
   if (!media?.publicId) {
     return;
   }
@@ -451,76 +463,85 @@ async function destroyCloudinaryMedia(media) {
     );
   } catch (error) {
     console.error(
-      "Cloudinary cleanup error:",
+      "[CLOUDINARY] Cleanup error:",
       error.message
     );
   }
 }
 
-async function cleanupUploadedMedia(media) {
-  if (!Array.isArray(media) || !media.length) {
+async function cleanupUploadedMedia(
+  media
+) {
+  if (
+    !Array.isArray(media) ||
+    media.length === 0
+  ) {
     return;
   }
 
   await Promise.allSettled(
-    media.map(
-      destroyCloudinaryMedia
-    )
+    media.map(destroyCloudinaryMedia)
   );
 }
 
-async function validateTaggedUsers(
-  taggedUsers
-) {
-  if (!taggedUsers.length) {
+/* =========================================================
+   VALIDATION
+========================================================= */
+
+async function validateTaggedUsers(ids) {
+  if (!ids.length) {
     return [];
   }
 
-  const validObjectIds =
-    taggedUsers.filter((id) =>
-      mongoose.Types.ObjectId.isValid(id)
-    );
+  const validIds = ids.filter((id) =>
+    mongoose.Types.ObjectId.isValid(id)
+  );
 
-  if (!validObjectIds.length) {
+  if (!validIds.length) {
     return [];
   }
 
   const users = await User.find({
     _id: {
-      $in: validObjectIds,
+      $in: validIds,
     },
   })
     .select("_id")
     .lean();
 
-  const validIds = new Set(
+  const existingIds = new Set(
     users.map((user) =>
       String(user._id)
     )
   );
 
-  return validObjectIds.filter((id) =>
-    validIds.has(String(id))
+  return validIds.filter((id) =>
+    existingIds.has(String(id))
   );
 }
+
+/* =========================================================
+   CREATE POST / REEL
+========================================================= */
 
 async function createPost(req, res) {
   const uploadedMedia = [];
 
   try {
-    const userId = requireUserId(
-      req,
-      res
-    );
+    const userId =
+      requireUserId(req, res);
 
     if (!userId) {
       return;
     }
 
-    if (
-      !Array.isArray(req.files) ||
-      req.files.length === 0
-    ) {
+    const files = Array.isArray(
+      req.files
+    )
+      ? req.files
+      : [];
+
+    if (!files.length) {
       return res.status(400).json({
         success: false,
         message:
@@ -528,7 +549,7 @@ async function createPost(req, res) {
       });
     }
 
-    if (req.files.length > MAX_MEDIA) {
+    if (files.length > MAX_MEDIA) {
       return res.status(400).json({
         success: false,
         message:
@@ -551,9 +572,10 @@ async function createPost(req, res) {
       });
     }
 
-    const postType = normalizePostType(
-      req.body?.postType
-    );
+    const postType =
+      normalizePostType(
+        req.body?.postType
+      );
 
     const visibility =
       normalizeVisibility(
@@ -575,11 +597,14 @@ async function createPost(req, res) {
         taggedUsers
       );
 
+    /*
+     * A reel must contain at least one video.
+     */
     if (postType === "reel") {
-      const containsVideo =
-        req.files.some(isVideoFile);
+      const hasVideo =
+        files.some(isVideoFile);
 
-      if (!containsVideo) {
+      if (!hasVideo) {
         return res.status(400).json({
           success: false,
           message:
@@ -588,57 +613,57 @@ async function createPost(req, res) {
       }
     }
 
-    const uploadResults =
+    /*
+     * Upload every media file.
+     */
+    const results =
       await Promise.all(
-        req.files.map(
+        files.map(
           uploadToCloudinary
         )
       );
 
-    for (
-      let index = 0;
-      index < uploadResults.length;
-      index++
-    ) {
-      const result =
-        uploadResults[index];
+    results.forEach(
+      (result, index) => {
+        const file = files[index];
 
-      const file = req.files[index];
+        uploadedMedia.push({
+          url: result.secure_url,
 
-      uploadedMedia.push({
-        url: result.secure_url,
+          publicId:
+            result.public_id || null,
 
-        publicId:
-          result.public_id || null,
-
-        type:
-          isVideoFile(file)
+          type: isVideoFile(file)
             ? "video"
             : "image",
 
-        width:
-          Number.isFinite(
-            result.width
-          )
-            ? result.width
-            : null,
+          width:
+            Number.isFinite(
+              result.width
+            )
+              ? result.width
+              : null,
 
-        height:
-          Number.isFinite(
-            result.height
-          )
-            ? result.height
-            : null,
+          height:
+            Number.isFinite(
+              result.height
+            )
+              ? result.height
+              : null,
 
-        duration:
-          Number.isFinite(
-            result.duration
-          )
-            ? result.duration
-            : null,
-      });
-    }
+          duration:
+            Number.isFinite(
+              result.duration
+            )
+              ? result.duration
+              : null,
+        });
+      }
+    );
 
+    /*
+     * Create MongoDB document.
+     */
     const post = await Post.create({
       user: userId,
 
@@ -656,15 +681,11 @@ async function createPost(req, res) {
       visibility,
 
       likes: [],
-
       savedBy: [],
-
       repostedBy: [],
 
       commentsCount: 0,
-
       sharesCount: 0,
-
       repostsCount: 0,
 
       repostOf: null,
@@ -672,6 +693,9 @@ async function createPost(req, res) {
       isArchived: false,
     });
 
+    /*
+     * Reload and populate.
+     */
     const populatedPost =
       await populatePost(
         Post.findById(post._id)
@@ -698,11 +722,22 @@ async function createPost(req, res) {
     console.log(
       `[CREATE ${postType.toUpperCase()}]`,
       {
-        postId: String(post._id),
+        postId: String(
+          post._id
+        ),
+
         userId,
+
         postType,
+
         mediaCount:
           uploadedMedia.length,
+
+        mediaTypes:
+          uploadedMedia.map(
+            (media) =>
+              media.type
+          ),
       }
     );
 
@@ -718,7 +753,7 @@ async function createPost(req, res) {
     });
   } catch (error) {
     console.error(
-      "Create post error:",
+      "[CREATE POST] ERROR:",
       error
     );
 
@@ -732,15 +767,14 @@ async function createPost(req, res) {
     ) {
       return res.status(400).json({
         success: false,
-        message:
-          Object.values(
-            error.errors || {}
+        message: Object.values(
+          error.errors || {}
+        )
+          .map(
+            (item) =>
+              item.message
           )
-            .map(
-              (item) =>
-                item.message
-            )
-            .join(" "),
+          .join(" "),
       });
     }
 
@@ -753,12 +787,18 @@ async function createPost(req, res) {
   }
 }
 
-async function getMyPosts(req, res) {
+/* =========================================================
+   USER POSTS / REELS
+========================================================= */
+
+async function getUserPosts(
+  req,
+  res,
+  postType
+) {
   try {
-    const userId = requireUserId(
-      req,
-      res
-    );
+    const userId =
+      requireUserId(req, res);
 
     if (!userId) {
       return;
@@ -772,7 +812,9 @@ async function getMyPosts(req, res) {
 
     const filter = {
       user: userId,
-      postType: "post",
+
+      postType,
+
       isArchived: {
         $ne: true,
       },
@@ -793,7 +835,9 @@ async function getMyPosts(req, res) {
           .lean()
       ),
 
-      Post.countDocuments(filter),
+      Post.countDocuments(
+        filter
+      ),
     ]);
 
     const result =
@@ -803,45 +847,82 @@ async function getMyPosts(req, res) {
       );
 
     console.log(
-      "[GET MY POSTS]",
+      `[PROFILE ${postType.toUpperCase()}]`,
       {
         userId,
-        page,
-        limit,
+        postType,
         found: result.length,
         total,
+        page,
+        limit,
+        ids: result.map(
+          (post) => post.id
+        ),
       }
     );
 
     return res.json({
       success: true,
+
       posts: result,
+
       page,
       limit,
       total,
+
       hasMore:
-        skip + result.length < total,
+        skip + result.length <
+        total,
     });
   } catch (error) {
     console.error(
-      "Get my posts error:",
+      `[PROFILE ${postType.toUpperCase()}] ERROR:`,
       error
     );
 
     return res.status(500).json({
       success: false,
       message:
-        "Unable to load your posts.",
+        `Unable to load your ${postType}s.`,
     });
   }
 }
 
-async function getMyReels(req, res) {
+async function getMyPosts(
+  req,
+  res
+) {
+  return getUserPosts(
+    req,
+    res,
+    "post"
+  );
+}
+
+async function getMyReels(
+  req,
+  res
+) {
+  return getUserPosts(
+    req,
+    res,
+    "reel"
+  );
+}
+
+/* =========================================================
+   SAVED / LIKED / TAGGED
+========================================================= */
+
+async function getPostsByFilter(
+  req,
+  res,
+  filter,
+  errorMessage
+) {
   try {
-    const userId = requireUserId(
-      req,
-      res
-    );
+    const userId =
+      requireUserId(req, res);
 
     if (!userId) {
       return;
@@ -852,14 +933,6 @@ async function getMyReels(req, res) {
       limit,
       skip,
     } = getPagination(req);
-
-    const filter = {
-      user: userId,
-      postType: "reel",
-      isArchived: {
-        $ne: true,
-      },
-    };
 
     const [
       posts,
@@ -876,7 +949,9 @@ async function getMyReels(req, res) {
           .lean()
       ),
 
-      Post.countDocuments(filter),
+      Post.countDocuments(
+        filter
+      ),
     ]);
 
     const result =
@@ -885,17 +960,6 @@ async function getMyReels(req, res) {
         userId
       );
 
-    console.log(
-      "[GET MY REELS]",
-      {
-        userId,
-        page,
-        limit,
-        found: result.length,
-        total,
-      }
-    );
-
     return res.json({
       success: true,
       posts: result,
@@ -903,41 +967,31 @@ async function getMyReels(req, res) {
       limit,
       total,
       hasMore:
-        skip + result.length < total,
+        skip + result.length <
+        total,
     });
   } catch (error) {
     console.error(
-      "Get my reels error:",
+      `[POST FILTER] ${errorMessage}`,
       error
     );
 
     return res.status(500).json({
       success: false,
-      message:
-        "Unable to load your reels.",
+      message: errorMessage,
     });
   }
 }
 
-async function getSavedPosts(req, res) {
-  try {
-    const userId = requireUserId(
-      req,
-      res
-    );
-
-    if (!userId) {
-      return;
-    }
-
-    const {
-      page,
-      limit,
-      skip,
-    } = getPagination(req);
-
-    const filter = {
-      savedBy: userId,
+async function getSavedPosts(
+  req,
+  res
+) {
+  return getPostsByFilter(
+    req,
+    res,
+    {
+      savedBy: getUserId(req),
 
       postType: {
         $ne: "repost",
@@ -946,74 +1000,20 @@ async function getSavedPosts(req, res) {
       isArchived: {
         $ne: true,
       },
-    };
-
-    const [
-      posts,
-      total,
-    ] = await Promise.all([
-      populatePost(
-        Post.find(filter)
-          .sort({
-            createdAt: -1,
-            _id: -1,
-          })
-          .skip(skip)
-          .limit(limit)
-          .lean()
-      ),
-
-      Post.countDocuments(filter),
-    ]);
-
-    const result =
-      normalizePosts(
-        posts,
-        userId
-      );
-
-    return res.json({
-      success: true,
-      posts: result,
-      page,
-      limit,
-      total,
-      hasMore:
-        skip + result.length < total,
-    });
-  } catch (error) {
-    console.error(
-      "Get saved posts error:",
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-      message:
-        "Unable to load saved posts.",
-    });
-  }
+    },
+    "Unable to load saved posts."
+  );
 }
 
-async function getLikedPosts(req, res) {
-  try {
-    const userId = requireUserId(
-      req,
-      res
-    );
-
-    if (!userId) {
-      return;
-    }
-
-    const {
-      page,
-      limit,
-      skip,
-    } = getPagination(req);
-
-    const filter = {
-      likes: userId,
+async function getLikedPosts(
+  req,
+  res
+) {
+  return getPostsByFilter(
+    req,
+    res,
+    {
+      likes: getUserId(req),
 
       postType: {
         $ne: "repost",
@@ -1022,85 +1022,20 @@ async function getLikedPosts(req, res) {
       isArchived: {
         $ne: true,
       },
-    };
-
-    const [
-      posts,
-      total,
-    ] = await Promise.all([
-      populatePost(
-        Post.find(filter)
-          .sort({
-            createdAt: -1,
-            _id: -1,
-          })
-          .skip(skip)
-          .limit(limit)
-          .lean()
-      ),
-
-      Post.countDocuments(filter),
-    ]);
-
-    const result =
-      normalizePosts(
-        posts,
-        userId
-      );
-
-    console.log(
-      "[GET LIKED POSTS]",
-      {
-        userId,
-        page,
-        limit,
-        found: result.length,
-        total,
-      }
-    );
-
-    return res.json({
-      success: true,
-      posts: result,
-      page,
-      limit,
-      total,
-      hasMore:
-        skip + result.length < total,
-    });
-  } catch (error) {
-    console.error(
-      "Get liked posts error:",
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-      message:
-        "Unable to load liked posts.",
-    });
-  }
+    },
+    "Unable to load liked posts."
+  );
 }
 
-async function getTaggedPosts(req, res) {
-  try {
-    const userId = requireUserId(
-      req,
-      res
-    );
-
-    if (!userId) {
-      return;
-    }
-
-    const {
-      page,
-      limit,
-      skip,
-    } = getPagination(req);
-
-    const filter = {
-      taggedUsers: userId,
+async function getTaggedPosts(
+  req,
+  res
+) {
+  return getPostsByFilter(
+    req,
+    res,
+    {
+      taggedUsers: getUserId(req),
 
       postType: {
         $ne: "repost",
@@ -1109,61 +1044,22 @@ async function getTaggedPosts(req, res) {
       isArchived: {
         $ne: true,
       },
-    };
-
-    const [
-      posts,
-      total,
-    ] = await Promise.all([
-      populatePost(
-        Post.find(filter)
-          .sort({
-            createdAt: -1,
-            _id: -1,
-          })
-          .skip(skip)
-          .limit(limit)
-          .lean()
-      ),
-
-      Post.countDocuments(filter),
-    ]);
-
-    const result =
-      normalizePosts(
-        posts,
-        userId
-      );
-
-    return res.json({
-      success: true,
-      posts: result,
-      page,
-      limit,
-      total,
-      hasMore:
-        skip + result.length < total,
-    });
-  } catch (error) {
-    console.error(
-      "Get tagged posts error:",
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-      message:
-        "Unable to load tagged posts.",
-    });
-  }
+    },
+    "Unable to load tagged posts."
+  );
 }
 
-async function getMyReposts(req, res) {
+/* =========================================================
+   REPOSTS
+========================================================= */
+
+async function getMyReposts(
+  req,
+  res
+) {
   try {
-    const userId = requireUserId(
-      req,
-      res
-    );
+    const userId =
+      requireUserId(req, res);
 
     if (!userId) {
       return;
@@ -1178,6 +1074,10 @@ async function getMyReposts(req, res) {
     const filter = {
       user: userId,
       postType: "repost",
+
+      isArchived: {
+        $ne: true,
+      },
     };
 
     const [
@@ -1195,7 +1095,9 @@ async function getMyReposts(req, res) {
           .lean()
       ),
 
-      Post.countDocuments(filter),
+      Post.countDocuments(
+        filter
+      ),
     ]);
 
     const result =
@@ -1211,7 +1113,8 @@ async function getMyReposts(req, res) {
       limit,
       total,
       hasMore:
-        skip + result.length < total,
+        skip + result.length <
+        total,
     });
   } catch (error) {
     console.error(
@@ -1227,12 +1130,244 @@ async function getMyReposts(req, res) {
   }
 }
 
-async function getFeed(req, res) {
+async function repostPost(
+  req,
+  res
+) {
   try {
-    const userId = requireUserId(
-      req,
-      res
+    const userId =
+      requireUserId(req, res);
+
+    if (!userId) {
+      return;
+    }
+
+    const original =
+      await Post.findById(
+        req.params.id
+      ).lean();
+
+    if (!original) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Post not found.",
+      });
+    }
+
+    const originalId =
+      original.postType ===
+        "repost" &&
+      original.repostOf
+        ? original.repostOf
+        : original._id;
+
+    const existing =
+      await Post.findOne({
+        user: userId,
+        postType: "repost",
+        repostOf: originalId,
+      }).lean();
+
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "You have already reposted this post.",
+        reposted: true,
+        post: addUserState(
+          existing,
+          userId
+        ),
+      });
+    }
+
+    const repostMedia =
+      Array.isArray(
+        original.media
+      )
+        ? original.media.map(
+            (media) => ({
+              url: media.url,
+
+              publicId:
+                media.publicId ||
+                null,
+
+              type:
+                media.type ||
+                "image",
+
+              width:
+                media.width ??
+                null,
+
+              height:
+                media.height ??
+                null,
+
+              duration:
+                media.duration ??
+                null,
+            })
+          )
+        : [];
+
+    if (!repostMedia.length) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "The original post has no media and cannot be reposted.",
+      });
+    }
+
+    const repost =
+      await Post.create({
+        user: userId,
+
+        media: repostMedia,
+
+        caption: "",
+
+        location: {
+          name: "",
+          latitude: null,
+          longitude: null,
+        },
+
+        taggedUsers: [],
+
+        visibility: "public",
+
+        postType: "repost",
+
+        repostOf: originalId,
+
+        likes: [],
+        savedBy: [],
+        repostedBy: [],
+
+        commentsCount: 0,
+        sharesCount: 0,
+        repostsCount: 0,
+
+        isArchived: false,
+      });
+
+    await Post.findByIdAndUpdate(
+      originalId,
+      {
+        $addToSet: {
+          repostedBy: userId,
+        },
+
+        $inc: {
+          repostsCount: 1,
+        },
+      }
     );
+
+    const populated =
+      await populateRepost(
+        Post.findById(
+          repost._id
+        )
+      );
+
+    return res.status(201).json({
+      success: true,
+      reposted: true,
+      post: addUserState(
+        populated,
+        userId
+      ),
+    });
+  } catch (error) {
+    console.error(
+      "Repost error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Unable to repost this post.",
+    });
+  }
+}
+
+async function unrepostPost(
+  req,
+  res
+) {
+  try {
+    const userId =
+      requireUserId(req, res);
+
+    if (!userId) {
+      return;
+    }
+
+    const repost =
+      await Post.findOne({
+        user: userId,
+        postType: "repost",
+        repostOf: req.params.id,
+      });
+
+    if (!repost) {
+      return res.json({
+        success: true,
+        reposted: false,
+      });
+    }
+
+    await repost.deleteOne();
+
+    await Post.findByIdAndUpdate(
+      req.params.id,
+      {
+        $pull: {
+          repostedBy: userId,
+        },
+
+        $inc: {
+          repostsCount: -1,
+        },
+      }
+    );
+
+    return res.json({
+      success: true,
+      reposted: false,
+      postId:
+        req.params.id,
+    });
+  } catch (error) {
+    console.error(
+      "Unrepost error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Unable to remove repost.",
+    });
+  }
+}
+
+/* =========================================================
+   FEED
+========================================================= */
+
+async function getFeed(
+  req,
+  res
+) {
+  try {
+    const userId =
+      requireUserId(req, res);
 
     if (!userId) {
       return;
@@ -1274,14 +1409,14 @@ async function getFeed(req, res) {
         ...mutedIds,
       ]);
 
-    const currentUserObjectId =
+    const currentUserId =
       new mongoose.Types.ObjectId(
         userId
       );
 
     const authorIds =
       uniqueIds([
-        currentUserObjectId,
+        currentUserId,
         ...followingIds,
       ]);
 
@@ -1291,13 +1426,25 @@ async function getFeed(req, res) {
       skip,
     } = getPagination(req);
 
+    /*
+     * Feed contains:
+     * - normal posts
+     * - reels
+     *
+     * Reposts stay excluded.
+     */
     const filter = {
       user: {
         $in: authorIds,
         $nin: excludedIds,
       },
 
-      postType: "post",
+      postType: {
+        $in: [
+          "post",
+          "reel",
+        ],
+      },
 
       isArchived: {
         $ne: true,
@@ -1319,7 +1466,7 @@ async function getFeed(req, res) {
         {
           visibility: "private",
 
-          user: currentUserObjectId,
+          user: currentUserId,
         },
 
         {
@@ -1345,7 +1492,9 @@ async function getFeed(req, res) {
           .lean()
       ),
 
-      Post.countDocuments(filter),
+      Post.countDocuments(
+        filter
+      ),
     ]);
 
     const result =
@@ -1376,6 +1525,12 @@ async function getFeed(req, res) {
           result.length,
 
         total,
+
+        postTypes:
+          result.map(
+            (post) =>
+              post.postType
+          ),
       }
     );
 
@@ -1390,10 +1545,12 @@ async function getFeed(req, res) {
 
       total,
 
-      result: result.length,
+      result:
+        result.length,
 
       hasMore:
-        skip + result.length < total,
+        skip + result.length <
+        total,
     });
   } catch (error) {
     console.error(
@@ -1409,7 +1566,14 @@ async function getFeed(req, res) {
   }
 }
 
-async function getPost(req, res) {
+/* =========================================================
+   GET SINGLE POST
+========================================================= */
+
+async function getPost(
+  req,
+  res
+) {
   try {
     const post =
       await populateRepost(
@@ -1426,10 +1590,12 @@ async function getPost(req, res) {
       });
     }
 
-    const userId = getUserId(req);
+    const userId =
+      getUserId(req);
 
     const original =
-      post.postType === "repost" &&
+      post.postType ===
+        "repost" &&
       post.repostOf
         ? post.repostOf
         : post;
@@ -1464,7 +1630,9 @@ async function getPost(req, res) {
       }
 
       const currentUser =
-        await User.findById(userId)
+        await User.findById(
+          userId
+        )
           .select(
             "following blockedUsers mutedUsers"
           )
@@ -1534,12 +1702,17 @@ async function getPost(req, res) {
   }
 }
 
-async function deletePost(req, res) {
+/* =========================================================
+   DELETE POST / REEL
+========================================================= */
+
+async function deletePost(
+  req,
+  res
+) {
   try {
-    const userId = requireUserId(
-      req,
-      res
-    );
+    const userId =
+      requireUserId(req, res);
 
     if (!userId) {
       return;
@@ -1570,14 +1743,16 @@ async function deletePost(req, res) {
     }
 
     if (
-      post.postType === "repost" &&
+      post.postType ===
+        "repost" &&
       post.repostOf
     ) {
       await Post.findByIdAndUpdate(
         post.repostOf,
         {
           $pull: {
-            repostedBy: post.user,
+            repostedBy:
+              post.user,
           },
 
           $inc: {
@@ -1590,10 +1765,8 @@ async function deletePost(req, res) {
 
       return res.json({
         success: true,
-
         message:
           "Repost removed successfully.",
-
         postId:
           String(post._id),
       });
@@ -1617,10 +1790,10 @@ async function deletePost(req, res) {
 
     return res.json({
       success: true,
-
       message:
-        "Post deleted successfully.",
-
+        post.postType === "reel"
+          ? "Reel deleted successfully."
+          : "Post deleted successfully.",
       postId:
         String(post._id),
     });
@@ -1638,12 +1811,39 @@ async function deletePost(req, res) {
   }
 }
 
-async function savePost(req, res) {
+/* =========================================================
+   SAVE
+========================================================= */
+
+async function savePost(
+  req,
+  res
+) {
+  return updateSaveState(
+    req,
+    res,
+    true
+  );
+}
+
+async function unsavePost(
+  req,
+  res
+) {
+  return updateSaveState(
+    req,
+    res,
+    false
+  );
+}
+
+async function toggleSave(
+  req,
+  res
+) {
   try {
-    const userId = requireUserId(
-      req,
-      res
-    );
+    const userId =
+      requireUserId(req, res);
 
     if (!userId) {
       return;
@@ -1664,70 +1864,63 @@ async function savePost(req, res) {
       });
     }
 
-    const updated =
-      await Post.findByIdAndUpdate(
-        post._id,
-        {
-          $addToSet: {
-            savedBy: userId,
-          },
-        },
-        {
-          new: true,
-          projection: {
-            savedBy: 1,
-          },
-        }
-      ).lean();
+    const alreadySaved =
+      hasId(
+        post.savedBy,
+        userId
+      );
 
-    return res.json({
-      success: true,
-
-      saved: true,
-
-      savesCount:
-        updated?.savedBy?.length || 0,
-
-      postId:
-        String(post._id),
-    });
+    return updateSaveState(
+      req,
+      res,
+      !alreadySaved
+    );
   } catch (error) {
     console.error(
-      "Save post error:",
+      "Toggle save error:",
       error
     );
 
     return res.status(500).json({
       success: false,
       message:
-        "Unable to save post.",
+        "Unable to update saved post.",
     });
   }
 }
 
-async function unsavePost(req, res) {
+async function updateSaveState(
+  req,
+  res,
+  shouldSave
+) {
   try {
-    const userId = requireUserId(
-      req,
-      res
-    );
+    const userId =
+      requireUserId(req, res);
 
     if (!userId) {
       return;
     }
 
-    const updated =
-      await Post.findOneAndUpdate(
-        {
-          _id: req.params.id,
-        },
-        {
+    const update = shouldSave
+      ? {
+          $addToSet: {
+            savedBy: userId,
+          },
+        }
+      : {
           $pull: {
             savedBy: userId,
           },
-        },
+        };
+
+    const updated =
+      await Post.findByIdAndUpdate(
+        req.params.id,
+        update,
         {
           new: true,
+
           projection: {
             savedBy: 1,
           },
@@ -1745,97 +1938,20 @@ async function unsavePost(req, res) {
     return res.json({
       success: true,
 
-      saved: false,
+      saved: shouldSave,
+
+      isSaved: shouldSave,
 
       savesCount:
-        updated.savedBy?.length || 0,
+        updated.savedBy?.length ||
+        0,
 
       postId:
         String(updated._id),
     });
   } catch (error) {
     console.error(
-      "Unsave post error:",
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-      message:
-        "Unable to remove saved post.",
-    });
-  }
-}
-
-async function toggleSave(req, res) {
-  try {
-    const userId = requireUserId(
-      req,
-      res
-    );
-
-    if (!userId) {
-      return;
-    }
-
-    const post =
-      await Post.findById(
-        req.params.id
-      ).select(
-        "_id savedBy"
-      );
-
-    if (!post) {
-      return res.status(404).json({
-        success: false,
-        message:
-          "Post not found.",
-      });
-    }
-
-    const alreadySaved = hasId(
-      post.savedBy,
-      userId
-    );
-
-    const update = alreadySaved
-      ? {
-          $pull: {
-            savedBy: userId,
-          },
-        }
-      : {
-          $addToSet: {
-            savedBy: userId,
-          },
-        };
-
-    const updated =
-      await Post.findByIdAndUpdate(
-        post._id,
-        update,
-        {
-          new: true,
-          projection: {
-            savedBy: 1,
-          },
-        }
-      ).lean();
-
-    return res.json({
-      success: true,
-
-      saved: !alreadySaved,
-
-      savesCount:
-        updated?.savedBy?.length || 0,
-
-      postId:
-        String(post._id),
-    });
-  } catch (error) {
-    console.error(
-      "Toggle save error:",
+      "Save state error:",
       error
     );
 
@@ -1847,239 +1963,17 @@ async function toggleSave(req, res) {
   }
 }
 
-async function repostPost(req, res) {
+/* =========================================================
+   COMMENTS
+========================================================= */
+
+async function createComment(
+  req,
+  res
+) {
   try {
-    const userId = requireUserId(
-      req,
-      res
-    );
-
-    if (!userId) {
-      return;
-    }
-
-    const original =
-      await Post.findById(
-        req.params.id
-      ).lean();
-
-    if (!original) {
-      return res.status(404).json({
-        success: false,
-        message:
-          "Post not found.",
-      });
-    }
-
-    const originalId =
-      original.postType === "repost" &&
-      original.repostOf
-        ? original.repostOf
-        : original._id;
-
-    const existing =
-      await Post.findOne({
-        user: userId,
-        postType: "repost",
-        repostOf: originalId,
-      }).lean();
-
-    if (existing) {
-      return res.status(409).json({
-        success: false,
-
-        message:
-          "You have already reposted this post.",
-
-        reposted: true,
-
-        post: addUserState(
-          existing,
-          userId
-        ),
-      });
-    }
-
-    const repostMedia =
-      Array.isArray(original.media)
-        ? original.media.map(
-            (media) => ({
-              url: media.url,
-
-              publicId:
-                media.publicId || null,
-
-              type:
-                media.type || "image",
-
-              width:
-                media.width ?? null,
-
-              height:
-                media.height ?? null,
-
-              duration:
-                media.duration ?? null,
-            })
-          )
-        : [];
-
-    if (!repostMedia.length) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "The original post has no media and cannot be reposted.",
-      });
-    }
-
-    const repost =
-      await Post.create({
-        user: userId,
-
-        media: repostMedia,
-
-        caption: "",
-
-        location: {
-          name: "",
-          latitude: null,
-          longitude: null,
-        },
-
-        taggedUsers: [],
-
-        visibility: "public",
-
-        postType: "repost",
-
-        repostOf: originalId,
-
-        likes: [],
-
-        savedBy: [],
-
-        repostedBy: [],
-
-        commentsCount: 0,
-
-        sharesCount: 0,
-
-        repostsCount: 0,
-
-        isArchived: false,
-      });
-
-    await Post.findByIdAndUpdate(
-      originalId,
-      {
-        $addToSet: {
-          repostedBy: userId,
-        },
-
-        $inc: {
-          repostsCount: 1,
-        },
-      }
-    );
-
-    const populated =
-      await populateRepost(
-        Post.findById(
-          repost._id
-        )
-      );
-
-    return res.status(201).json({
-      success: true,
-
-      reposted: true,
-
-      post: addUserState(
-        populated,
-        userId
-      ),
-    });
-  } catch (error) {
-    console.error(
-      "Repost error:",
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-      message:
-        "Unable to repost this post.",
-    });
-  }
-}
-
-async function unrepostPost(req, res) {
-  try {
-    const userId = requireUserId(
-      req,
-      res
-    );
-
-    if (!userId) {
-      return;
-    }
-
-    const repost =
-      await Post.findOne({
-        user: userId,
-        postType: "repost",
-        repostOf: req.params.id,
-      });
-
-    if (!repost) {
-      return res.json({
-        success: true,
-        reposted: false,
-      });
-    }
-
-    await repost.deleteOne();
-
-    await Post.findByIdAndUpdate(
-      req.params.id,
-      {
-        $pull: {
-          repostedBy: userId,
-        },
-
-        $inc: {
-          repostsCount: -1,
-        },
-      }
-    );
-
-    return res.json({
-      success: true,
-
-      reposted: false,
-
-      postId: req.params.id,
-    });
-  } catch (error) {
-    console.error(
-      "Unrepost error:",
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-      message:
-        "Unable to remove repost.",
-    });
-  }
-}
-
-async function createComment(req, res) {
-  try {
-    const userId = requireUserId(
-      req,
-      res
-    );
+    const userId =
+      requireUserId(req, res);
 
     if (!userId) {
       return;
@@ -2127,7 +2021,8 @@ async function createComment(req, res) {
     }
 
     if (
-      post.visibility === "private" &&
+      post.visibility ===
+        "private" &&
       String(post.user) !==
         String(userId)
     ) {
@@ -2148,13 +2043,17 @@ async function createComment(req, res) {
         owner,
         currentUser,
       ] = await Promise.all([
-        User.findById(post.user)
+        User.findById(
+          post.user
+        )
           .select(
             "blockedUsers mutedUsers"
           )
           .lean(),
 
-        User.findById(userId)
+        User.findById(
+          userId
+        )
           .select(
             "following blockedUsers mutedUsers"
           )
@@ -2169,16 +2068,7 @@ async function createComment(req, res) {
         hasId(
           owner?.mutedUsers,
           userId
-        )
-      ) {
-        return res.status(403).json({
-          success: false,
-          message:
-            "You cannot comment on this post.",
-        });
-      }
-
-      if (
+        ) ||
         hasId(
           currentUser?.blockedUsers,
           post.user
@@ -2230,11 +2120,8 @@ async function createComment(req, res) {
     const comment =
       await Comment.create({
         post: post._id,
-
         user: userId,
-
         text,
-
         parentComment,
       });
 
@@ -2252,12 +2139,12 @@ async function createComment(req, res) {
         comment._id
       ).populate({
         path: "user",
-        select: COMMENT_USER_FIELDS,
+        select:
+          COMMENT_USER_FIELDS,
       });
 
     return res.status(201).json({
       success: true,
-
       comment:
         populatedComment,
     });
@@ -2275,7 +2162,10 @@ async function createComment(req, res) {
   }
 }
 
-async function getComments(req, res) {
+async function getComments(
+  req,
+  res
+) {
   try {
     const post =
       await Post.findById(
@@ -2300,7 +2190,8 @@ async function getComments(req, res) {
       })
         .populate({
           path: "user",
-          select: COMMENT_USER_FIELDS,
+          select:
+            COMMENT_USER_FIELDS,
         })
         .sort({
           createdAt: 1,
@@ -2325,22 +2216,34 @@ async function getComments(req, res) {
   }
 }
 
+/* =========================================================
+   EXPORTS
+========================================================= */
+
 module.exports = {
   createPost,
+
   getFeed,
+
   getMyPosts,
   getMyReels,
+
   getSavedPosts,
   getLikedPosts,
   getTaggedPosts,
+
   getMyReposts,
+
   repostPost,
   unrepostPost,
+
   getPost,
   deletePost,
+
   savePost,
   unsavePost,
   toggleSave,
+
   createComment,
   getComments,
 };

@@ -1,50 +1,73 @@
 const Live = require("../models/Live");
 
 function registerLiveSocket(io, socket) {
-  
+  /*
+   * JOIN LIVE
+   */
   socket.on(
     "live:join",
-    async ({ liveId, user }) => {
+    async ({
+      liveId,
+      user,
+    } = {}) => {
       try {
         if (!liveId) {
           return;
         }
 
-        const live = await Live.findOne({
-          _id: liveId,
-          status: "live",
-          isActive: true,
-        }).populate(
-          "host",
-          "username fullName avatar isVerified"
-        );
+        const live =
+          await Live.findOne({
+            _id: liveId,
+            status: "live",
+            isActive: true,
+          }).populate(
+            "host",
+            "username fullName avatar isVerified"
+          );
 
         if (!live) {
-          socket.emit("live:unavailable", {
-            liveId,
-            reason: "Live session is no longer available",
-          });
+          socket.emit(
+            "live:unavailable",
+            {
+              liveId,
+              reason:
+                "Live session is no longer available",
+            }
+          );
 
           return;
         }
 
-        const room = `live:${liveId}`;
+        const room =
+          `live:${liveId}`;
 
         socket.join(room);
 
-        socket.liveId = String(liveId);
+        socket.liveId =
+          String(liveId);
 
-        const currentUserId = String(
-          socket.userId || user?.id || user?._id || ""
-        );
+        const currentUserId =
+          String(
+            socket.userId ||
+              user?.id ||
+              user?._id ||
+              ""
+          );
 
-        const hostId = String(
-          live.host?._id || live.host
-        );
+        const hostId =
+          String(
+            live.host?._id ||
+              live.host
+          );
 
         socket.liveHost =
-          currentUserId === hostId;
+          currentUserId ===
+          hostId;
 
+        /*
+         * Increase viewer count
+         * for non-host viewers.
+         */
         if (!socket.liveHost) {
           const updatedLive =
             await Live.findOneAndUpdate(
@@ -77,9 +100,12 @@ function registerLiveSocket(io, socket) {
             io.to(room).emit(
               "live:viewer-count",
               {
-                liveId: String(liveId),
+                liveId:
+                  String(liveId),
+
                 viewerCount:
                   updatedLive.viewerCount,
+
                 peakViewerCount:
                   updatedLive.peakViewerCount,
               }
@@ -89,22 +115,43 @@ function registerLiveSocket(io, socket) {
 
         socket
           .to(room)
-          .emit("live:user-joined", {
-            liveId: String(liveId),
-            user: user || null,
-            userId: currentUserId,
-            isHost: socket.liveHost,
-          });
+          .emit(
+            "live:user-joined",
+            {
+              liveId:
+                String(liveId),
 
-        socket.emit("live:joined", {
-          liveId: String(liveId),
-          live,
-          isHost: socket.liveHost,
-          room,
-        });
+              user:
+                user || null,
+
+              userId:
+                currentUserId,
+
+              isHost:
+                socket.liveHost,
+            }
+          );
+
+        socket.emit(
+          "live:joined",
+          {
+            liveId:
+              String(liveId),
+
+            live,
+
+            isHost:
+              socket.liveHost,
+
+            room,
+          }
+        );
 
         console.log(
-          `Live joined: ${currentUserId || socket.id} -> ${liveId}`
+          `Live joined: ${
+            currentUserId ||
+            socket.id
+          } -> ${liveId}`
         );
       } catch (error) {
         console.error(
@@ -112,23 +159,33 @@ function registerLiveSocket(io, socket) {
           error
         );
 
-        socket.emit("live:error", {
-          liveId,
-          message: "Unable to join live",
-        });
+        socket.emit(
+          "live:error",
+          {
+            liveId,
+            message:
+              "Unable to join live",
+          }
+        );
       }
     }
   );
 
+  /*
+   * LEAVE LIVE
+   */
   socket.on(
     "live:leave",
-    async ({ liveId }) => {
+    async ({
+      liveId,
+    } = {}) => {
       try {
         if (!liveId) {
           return;
         }
 
-        const room = `live:${liveId}`;
+        const room =
+          `live:${liveId}`;
 
         if (!socket.liveHost) {
           const live =
@@ -155,9 +212,12 @@ function registerLiveSocket(io, socket) {
             io.to(room).emit(
               "live:viewer-count",
               {
-                liveId: String(liveId),
+                liveId:
+                  String(liveId),
+
                 viewerCount:
                   live.viewerCount,
+
                 peakViewerCount:
                   live.peakViewerCount,
               }
@@ -167,12 +227,19 @@ function registerLiveSocket(io, socket) {
 
         socket
           .to(room)
-          .emit("live:user-left", {
-            liveId: String(liveId),
-            userId: String(
-              socket.userId || ""
-            ),
-          });
+          .emit(
+            "live:user-left",
+            {
+              liveId:
+                String(liveId),
+
+              userId:
+                String(
+                  socket.userId ||
+                    ""
+                ),
+            }
+          );
 
         socket.leave(room);
 
@@ -180,7 +247,10 @@ function registerLiveSocket(io, socket) {
         socket.liveHost = false;
 
         console.log(
-          `Live left: ${socket.userId || socket.id} -> ${liveId}`
+          `Live left: ${
+            socket.userId ||
+            socket.id
+          } -> ${liveId}`
         );
       } catch (error) {
         console.error(
@@ -191,13 +261,16 @@ function registerLiveSocket(io, socket) {
     }
   );
 
+  /*
+   * LIVE WEBRTC OFFER
+   */
   socket.on(
     "live:offer",
     ({
       liveId,
       targetUserId,
       offer,
-    }) => {
+    } = {}) => {
       try {
         if (
           !liveId ||
@@ -207,25 +280,58 @@ function registerLiveSocket(io, socket) {
           return;
         }
 
-        const targetSocketId =
+        const targetSockets =
           io.connectedUsers?.get(
             String(targetUserId)
           );
 
-        if (!targetSocketId) {
+        if (!targetSockets) {
           return;
         }
 
-        io.to(targetSocketId).emit(
-          "live:offer",
-          {
-            liveId: String(liveId),
-            offer,
-            senderId: String(
-              socket.userId || ""
-            ),
+        if (
+          targetSockets instanceof
+          Set
+        ) {
+          for (
+            const socketId of
+              targetSockets
+          ) {
+            io.to(socketId).emit(
+              "live:offer",
+              {
+                liveId:
+                  String(liveId),
+
+                offer,
+
+                senderId:
+                  String(
+                    socket.userId ||
+                      ""
+                  ),
+              }
+            );
           }
-        );
+        } else {
+          io.to(
+            targetSockets
+          ).emit(
+            "live:offer",
+            {
+              liveId:
+                String(liveId),
+
+              offer,
+
+              senderId:
+                String(
+                  socket.userId ||
+                    ""
+                ),
+            }
+          );
+        }
       } catch (error) {
         console.error(
           "LIVE OFFER ERROR:",
@@ -235,13 +341,16 @@ function registerLiveSocket(io, socket) {
     }
   );
 
+  /*
+   * LIVE WEBRTC ANSWER
+   */
   socket.on(
     "live:answer",
     ({
       liveId,
       targetUserId,
       answer,
-    }) => {
+    } = {}) => {
       try {
         if (
           !liveId ||
@@ -251,25 +360,58 @@ function registerLiveSocket(io, socket) {
           return;
         }
 
-        const targetSocketId =
+        const targetSockets =
           io.connectedUsers?.get(
             String(targetUserId)
           );
 
-        if (!targetSocketId) {
+        if (!targetSockets) {
           return;
         }
 
-        io.to(targetSocketId).emit(
-          "live:answer",
-          {
-            liveId: String(liveId),
-            answer,
-            senderId: String(
-              socket.userId || ""
-            ),
+        if (
+          targetSockets instanceof
+          Set
+        ) {
+          for (
+            const socketId of
+              targetSockets
+          ) {
+            io.to(socketId).emit(
+              "live:answer",
+              {
+                liveId:
+                  String(liveId),
+
+                answer,
+
+                senderId:
+                  String(
+                    socket.userId ||
+                      ""
+                  ),
+              }
+            );
           }
-        );
+        } else {
+          io.to(
+            targetSockets
+          ).emit(
+            "live:answer",
+            {
+              liveId:
+                String(liveId),
+
+              answer,
+
+              senderId:
+                String(
+                  socket.userId ||
+                    ""
+                ),
+            }
+          );
+        }
       } catch (error) {
         console.error(
           "LIVE ANSWER ERROR:",
@@ -279,13 +421,16 @@ function registerLiveSocket(io, socket) {
     }
   );
 
+  /*
+   * LIVE ICE CANDIDATE
+   */
   socket.on(
     "live:ice-candidate",
     ({
       liveId,
       targetUserId,
       candidate,
-    }) => {
+    } = {}) => {
       try {
         if (
           !liveId ||
@@ -295,25 +440,58 @@ function registerLiveSocket(io, socket) {
           return;
         }
 
-        const targetSocketId =
+        const targetSockets =
           io.connectedUsers?.get(
             String(targetUserId)
           );
 
-        if (!targetSocketId) {
+        if (!targetSockets) {
           return;
         }
 
-        io.to(targetSocketId).emit(
-          "live:ice-candidate",
-          {
-            liveId: String(liveId),
-            candidate,
-            senderId: String(
-              socket.userId || ""
-            ),
+        if (
+          targetSockets instanceof
+          Set
+        ) {
+          for (
+            const socketId of
+              targetSockets
+          ) {
+            io.to(socketId).emit(
+              "live:ice-candidate",
+              {
+                liveId:
+                  String(liveId),
+
+                candidate,
+
+                senderId:
+                  String(
+                    socket.userId ||
+                      ""
+                  ),
+              }
+            );
           }
-        );
+        } else {
+          io.to(
+            targetSockets
+          ).emit(
+            "live:ice-candidate",
+            {
+              liveId:
+                String(liveId),
+
+              candidate,
+
+              senderId:
+                String(
+                  socket.userId ||
+                    ""
+                ),
+            }
+          );
+        }
       } catch (error) {
         console.error(
           "LIVE ICE CANDIDATE ERROR:",
@@ -323,9 +501,14 @@ function registerLiveSocket(io, socket) {
     }
   );
 
+  /*
+   * STREAM READY
+   */
   socket.on(
     "live:stream-ready",
-    ({ liveId }) => {
+    ({
+      liveId,
+    } = {}) => {
       try {
         if (!liveId) {
           return;
@@ -335,13 +518,19 @@ function registerLiveSocket(io, socket) {
           return;
         }
 
-        io.to(`live:${liveId}`).emit(
+        io.to(
+          `live:${liveId}`
+        ).emit(
           "live:stream-ready",
           {
-            liveId: String(liveId),
-            hostId: String(
-              socket.userId || ""
-            ),
+            liveId:
+              String(liveId),
+
+            hostId:
+              String(
+                socket.userId ||
+                  ""
+              ),
           }
         );
       } catch (error) {
@@ -353,13 +542,16 @@ function registerLiveSocket(io, socket) {
     }
   );
 
+  /*
+   * LIVE COMMENT
+   */
   socket.on(
     "live:comment",
     async ({
       liveId,
       text,
       user,
-    }) => {
+    } = {}) => {
       try {
         if (
           !liveId ||
@@ -369,19 +561,21 @@ function registerLiveSocket(io, socket) {
           return;
         }
 
-        const live = await Live.findOne({
-          _id: liveId,
-          status: "live",
-          isActive: true,
-        });
+        const live =
+          await Live.findOne({
+            _id: liveId,
+            status: "live",
+            isActive: true,
+          });
 
         if (!live) {
           return;
         }
 
-        const cleanText = String(text)
-          .trim()
-          .slice(0, 300);
+        const cleanText =
+          String(text)
+            .trim()
+            .slice(0, 300);
 
         await Live.findByIdAndUpdate(
           liveId,
@@ -393,16 +587,28 @@ function registerLiveSocket(io, socket) {
         );
 
         const comment = {
-          liveId: String(liveId),
-          userId: String(
-            socket.userId || ""
-          ),
-          user: user || null,
-          text: cleanText,
-          createdAt: new Date(),
+          liveId:
+            String(liveId),
+
+          userId:
+            String(
+              socket.userId ||
+                ""
+            ),
+
+          user:
+            user || null,
+
+          text:
+            cleanText,
+
+          createdAt:
+            new Date(),
         };
 
-        io.to(`live:${liveId}`).emit(
+        io.to(
+          `live:${liveId}`
+        ).emit(
           "live:comment",
           comment
         );
@@ -415,9 +621,14 @@ function registerLiveSocket(io, socket) {
     }
   );
 
+  /*
+   * LIVE LIKE
+   */
   socket.on(
     "live:like",
-    async ({ liveId }) => {
+    async ({
+      liveId,
+    } = {}) => {
       try {
         if (!liveId) {
           return;
@@ -444,13 +655,20 @@ function registerLiveSocket(io, socket) {
           return;
         }
 
-        io.to(`live:${liveId}`).emit(
+        io.to(
+          `live:${liveId}`
+        ).emit(
           "live:like",
           {
-            liveId: String(liveId),
-            userId: String(
-              socket.userId || ""
-            ),
+            liveId:
+              String(liveId),
+
+            userId:
+              String(
+                socket.userId ||
+                  ""
+              ),
+
             likesCount:
               live.likesCount,
           }
@@ -464,22 +682,35 @@ function registerLiveSocket(io, socket) {
     }
   );
 
+  /*
+   * LIVE HEART
+   */
   socket.on(
     "live:heart",
-    ({ liveId }) => {
+    ({
+      liveId,
+    } = {}) => {
       try {
         if (!liveId) {
           return;
         }
 
-        io.to(`live:${liveId}`).emit(
+        io.to(
+          `live:${liveId}`
+        ).emit(
           "live:heart",
           {
-            liveId: String(liveId),
-            userId: String(
-              socket.userId || ""
-            ),
-            timestamp: Date.now(),
+            liveId:
+              String(liveId),
+
+            userId:
+              String(
+                socket.userId ||
+                  ""
+              ),
+
+            timestamp:
+              Date.now(),
           }
         );
       } catch (error) {
@@ -491,12 +722,15 @@ function registerLiveSocket(io, socket) {
     }
   );
 
+  /*
+   * PIN COMMENT
+   */
   socket.on(
     "live:pin-comment",
     ({
       liveId,
       commentId,
-    }) => {
+    } = {}) => {
       try {
         if (
           !liveId ||
@@ -509,13 +743,16 @@ function registerLiveSocket(io, socket) {
           return;
         }
 
-        io.to(`live:${liveId}`).emit(
+        io.to(
+          `live:${liveId}`
+        ).emit(
           "live:comment-pinned",
           {
-            liveId: String(liveId),
-            commentId: String(
-              commentId
-            ),
+            liveId:
+              String(liveId),
+
+            commentId:
+              String(commentId),
           }
         );
       } catch (error) {
@@ -527,9 +764,15 @@ function registerLiveSocket(io, socket) {
     }
   );
 
+  /*
+   * HOST MUTE
+   */
   socket.on(
     "live:mute",
-    ({ liveId, muted }) => {
+    ({
+      liveId,
+      muted,
+    } = {}) => {
       try {
         if (!liveId) {
           return;
@@ -539,11 +782,16 @@ function registerLiveSocket(io, socket) {
           return;
         }
 
-        io.to(`live:${liveId}`).emit(
+        io.to(
+          `live:${liveId}`
+        ).emit(
           "live:host-mute",
           {
-            liveId: String(liveId),
-            muted: Boolean(muted),
+            liveId:
+              String(liveId),
+
+            muted:
+              Boolean(muted),
           }
         );
       } catch (error) {
@@ -555,9 +803,14 @@ function registerLiveSocket(io, socket) {
     }
   );
 
+  /*
+   * END LIVE
+   */
   socket.on(
     "live:end",
-    ({ liveId }) => {
+    ({
+      liveId,
+    } = {}) => {
       try {
         if (!liveId) {
           return;
@@ -567,17 +820,25 @@ function registerLiveSocket(io, socket) {
           return;
         }
 
-        io.to(`live:${liveId}`).emit(
+        io.to(
+          `live:${liveId}`
+        ).emit(
           "live:ended",
           {
-            liveId: String(liveId),
-            hostId: String(
-              socket.userId || ""
-            ),
+            liveId:
+              String(liveId),
+
+            hostId:
+              String(
+                socket.userId ||
+                  ""
+              ),
           }
         );
 
-        io.in(`live:${liveId}`).socketsLeave(
+        io.in(
+          `live:${liveId}`
+        ).socketsLeave(
           `live:${liveId}`
         );
 
@@ -592,11 +853,15 @@ function registerLiveSocket(io, socket) {
     }
   );
 
+  /*
+   * SOCKET DISCONNECT
+   */
   socket.on(
     "disconnect",
     async () => {
       try {
-        const liveId = socket.liveId;
+        const liveId =
+          socket.liveId;
 
         if (!liveId) {
           return;
@@ -632,12 +897,17 @@ function registerLiveSocket(io, socket) {
           );
 
         if (live) {
-          io.to(`live:${liveId}`).emit(
+          io.to(
+            `live:${liveId}`
+          ).emit(
             "live:viewer-count",
             {
-              liveId: String(liveId),
+              liveId:
+                String(liveId),
+
               viewerCount:
                 live.viewerCount,
+
               peakViewerCount:
                 live.peakViewerCount,
             }
@@ -645,7 +915,10 @@ function registerLiveSocket(io, socket) {
         }
 
         console.log(
-          `LIVE VIEWER DISCONNECTED: ${socket.userId || socket.id}`
+          `LIVE VIEWER DISCONNECTED: ${
+            socket.userId ||
+            socket.id
+          }`
         );
       } catch (error) {
         console.error(
