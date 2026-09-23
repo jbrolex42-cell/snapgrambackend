@@ -32,10 +32,6 @@ const USER_FIELDS = [
 const COMMENT_USER_FIELDS =
   "username avatar fullName isVerified verified";
 
-/* =========================================================
-   HELPERS
-========================================================= */
-
 function getUserId(req) {
   const id =
     req.user?._id ||
@@ -393,10 +389,6 @@ function isVideoFile(file) {
   );
 }
 
-/* =========================================================
-   CLOUDINARY
-========================================================= */
-
 function uploadToCloudinary(file) {
   if (!file?.buffer) {
     return Promise.reject(
@@ -484,10 +476,6 @@ async function cleanupUploadedMedia(
   );
 }
 
-/* =========================================================
-   VALIDATION
-========================================================= */
-
 async function validateTaggedUsers(ids) {
   if (!ids.length) {
     return [];
@@ -519,10 +507,6 @@ async function validateTaggedUsers(ids) {
     existingIds.has(String(id))
   );
 }
-
-/* =========================================================
-   CREATE POST / REEL
-========================================================= */
 
 async function createPost(req, res) {
   const uploadedMedia = [];
@@ -597,9 +581,6 @@ async function createPost(req, res) {
         taggedUsers
       );
 
-    /*
-     * A reel must contain at least one video.
-     */
     if (postType === "reel") {
       const hasVideo =
         files.some(isVideoFile);
@@ -613,9 +594,6 @@ async function createPost(req, res) {
       }
     }
 
-    /*
-     * Upload every media file.
-     */
     const results =
       await Promise.all(
         files.map(
@@ -661,9 +639,6 @@ async function createPost(req, res) {
       }
     );
 
-    /*
-     * Create MongoDB document.
-     */
     const post = await Post.create({
       user: userId,
 
@@ -693,9 +668,6 @@ async function createPost(req, res) {
       isArchived: false,
     });
 
-    /*
-     * Reload and populate.
-     */
     const populatedPost =
       await populatePost(
         Post.findById(post._id)
@@ -786,10 +758,6 @@ async function createPost(req, res) {
     });
   }
 }
-
-/* =========================================================
-   USER POSTS / REELS
-========================================================= */
 
 async function getUserPosts(
   req,
@@ -909,10 +877,6 @@ async function getMyReels(
     "reel"
   );
 }
-
-/* =========================================================
-   SAVED / LIKED / TAGGED
-========================================================= */
 
 async function getPostsByFilter(
   req,
@@ -1048,10 +1012,6 @@ async function getTaggedPosts(
     "Unable to load tagged posts."
   );
 }
-
-/* =========================================================
-   REPOSTS
-========================================================= */
 
 async function getMyReposts(
   req,
@@ -1357,10 +1317,6 @@ async function unrepostPost(
   }
 }
 
-/* =========================================================
-   FEED
-========================================================= */
-
 async function getFeed(
   req,
   res
@@ -1426,13 +1382,6 @@ async function getFeed(
       skip,
     } = getPagination(req);
 
-    /*
-     * Feed contains:
-     * - normal posts
-     * - reels
-     *
-     * Reposts stay excluded.
-     */
     const filter = {
       user: {
         $in: authorIds,
@@ -1566,10 +1515,6 @@ async function getFeed(
   }
 }
 
-/* =========================================================
-   GET SINGLE POST
-========================================================= */
-
 async function getPost(
   req,
   res
@@ -1702,10 +1647,6 @@ async function getPost(
   }
 }
 
-/* =========================================================
-   DELETE POST / REEL
-========================================================= */
-
 async function deletePost(
   req,
   res
@@ -1810,10 +1751,6 @@ async function deletePost(
     });
   }
 }
-
-/* =========================================================
-   SAVE
-========================================================= */
 
 async function savePost(
   req,
@@ -1962,10 +1899,6 @@ async function updateSaveState(
     });
   }
 }
-
-/* =========================================================
-   COMMENTS
-========================================================= */
 
 async function createComment(
   req,
@@ -2215,10 +2148,6 @@ async function getComments(
     });
   }
 }
-
-/* =========================================================
-   EXPORTS
-========================================================= */
 
 module.exports = {
   createPost,

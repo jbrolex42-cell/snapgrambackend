@@ -136,9 +136,6 @@ function initializeSocket(server) {
 
   io.connectedUsers = new Map();
 
-  /*
-   * Socket authentication
-   */
   io.use((socket, next) => {
     try {
       const token =
@@ -185,9 +182,6 @@ function initializeSocket(server) {
     }
   });
 
-  /*
-   * Connection
-   */
   io.on("connection", (socket) => {
     const userId = normalizeId(socket.userId);
 
@@ -208,15 +202,8 @@ function initializeSocket(server) {
 
     socket.join(getUserRoom(userId));
 
-    /*
-     * Make io available to socket handlers.
-     */
     socket.io = io;
 
-    /*
-     * Broadcast online only when this is
-     * the user's first active socket.
-     */
     if (
       io.connectedUsers
         .get(userId)
@@ -229,16 +216,6 @@ function initializeSocket(server) {
       );
     }
 
-    /*
-     * Register call and live socket handlers.
-     *
-     * IMPORTANT:
-     * callSocket.js exports:
-     * { registerCallSocket }
-     *
-     * liveSocket.js exports:
-     * registerLiveSocket directly.
-     */
     try {
       registerCallSocket(io, socket);
     } catch (error) {
@@ -257,9 +234,6 @@ function initializeSocket(server) {
       );
     }
 
-    /*
-     * Join conversation
-     */
     socket.on(
       "conversation:join",
       async (payload = {}) => {
@@ -319,9 +293,6 @@ function initializeSocket(server) {
       }
     );
 
-    /*
-     * Leave conversation
-     */
     socket.on(
       "conversation:leave",
       (payload = {}) => {
@@ -357,9 +328,6 @@ function initializeSocket(server) {
       }
     );
 
-    /*
-     * Typing started
-     */
     socket.on(
       "typing:start",
       async (payload = {}) => {
@@ -413,9 +381,6 @@ function initializeSocket(server) {
       }
     );
 
-    /*
-     * Typing stopped
-     */
     socket.on(
       "typing:stop",
       async (payload = {}) => {
@@ -469,9 +434,6 @@ function initializeSocket(server) {
       }
     );
 
-    /*
-     * Message seen
-     */
     socket.on(
       "message:seen",
       async (payload = {}) => {
@@ -481,11 +443,6 @@ function initializeSocket(server) {
               payload.conversationId
             );
 
-          /*
-           * Supports both:
-           * messageId
-           * messageIds
-           */
           const messageId =
             normalizeId(
               payload.messageId ||
@@ -559,13 +516,6 @@ function initializeSocket(server) {
       }
     );
 
-    /*
-     * User join
-     *
-     * The socket already joins the user room
-     * during authentication, but this event
-     * remains supported for the mobile client.
-     */
     socket.on(
       "user:join",
       () => {
@@ -582,9 +532,6 @@ function initializeSocket(server) {
       }
     );
 
-    /*
-     * Disconnect
-     */
     socket.on(
       "disconnect",
       (reason) => {

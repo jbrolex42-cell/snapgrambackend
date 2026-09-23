@@ -1,9 +1,7 @@
 const Live = require("../models/Live");
 
 function registerLiveSocket(io, socket) {
-  /*
-   * JOIN LIVE
-   */
+
   socket.on(
     "live:join",
     async ({
@@ -64,10 +62,6 @@ function registerLiveSocket(io, socket) {
           currentUserId ===
           hostId;
 
-        /*
-         * Increase viewer count
-         * for non-host viewers.
-         */
         if (!socket.liveHost) {
           const updatedLive =
             await Live.findOneAndUpdate(
@@ -171,9 +165,6 @@ function registerLiveSocket(io, socket) {
     }
   );
 
-  /*
-   * LEAVE LIVE
-   */
   socket.on(
     "live:leave",
     async ({
@@ -261,9 +252,6 @@ function registerLiveSocket(io, socket) {
     }
   );
 
-  /*
-   * LIVE WEBRTC OFFER
-   */
   socket.on(
     "live:offer",
     ({
@@ -341,9 +329,6 @@ function registerLiveSocket(io, socket) {
     }
   );
 
-  /*
-   * LIVE WEBRTC ANSWER
-   */
   socket.on(
     "live:answer",
     ({
@@ -421,9 +406,6 @@ function registerLiveSocket(io, socket) {
     }
   );
 
-  /*
-   * LIVE ICE CANDIDATE
-   */
   socket.on(
     "live:ice-candidate",
     ({
@@ -501,9 +483,6 @@ function registerLiveSocket(io, socket) {
     }
   );
 
-  /*
-   * STREAM READY
-   */
   socket.on(
     "live:stream-ready",
     ({
@@ -542,9 +521,6 @@ function registerLiveSocket(io, socket) {
     }
   );
 
-  /*
-   * LIVE COMMENT
-   */
   socket.on(
     "live:comment",
     async ({
@@ -621,9 +597,6 @@ function registerLiveSocket(io, socket) {
     }
   );
 
-  /*
-   * LIVE LIKE
-   */
   socket.on(
     "live:like",
     async ({
@@ -682,9 +655,6 @@ function registerLiveSocket(io, socket) {
     }
   );
 
-  /*
-   * LIVE HEART
-   */
   socket.on(
     "live:heart",
     ({
@@ -722,9 +692,6 @@ function registerLiveSocket(io, socket) {
     }
   );
 
-  /*
-   * PIN COMMENT
-   */
   socket.on(
     "live:pin-comment",
     ({
@@ -764,9 +731,6 @@ function registerLiveSocket(io, socket) {
     }
   );
 
-  /*
-   * HOST MUTE
-   */
   socket.on(
     "live:mute",
     ({
@@ -803,9 +767,6 @@ function registerLiveSocket(io, socket) {
     }
   );
 
-  /*
-   * END LIVE
-   */
   socket.on(
     "live:end",
     ({
@@ -853,9 +814,6 @@ function registerLiveSocket(io, socket) {
     }
   );
 
-  /*
-   * SOCKET DISCONNECT
-   */
   socket.on(
     "disconnect",
     async () => {

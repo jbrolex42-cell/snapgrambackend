@@ -1,17 +1,15 @@
 const axios = require("axios");
 
-const MYMEMORY_URL = "https://api.mymemory.translated.net/get";
-
 const MAX_TRANSLATION_LENGTH = 5000;
 
-const LANGUAGE_ALIASES = {
-  auto: null,
+const LIBRETRANSLATE_URL =
+  process.env.LIBRETRANSLATE_URL;
 
+const LANGUAGE_ALIASES = {
   en: "en",
   english: "en",
 
   sw: "sw",
-  kiswahili: "sw",
   swahili: "sw",
 
   fr: "fr",
@@ -23,14 +21,11 @@ const LANGUAGE_ALIASES = {
   de: "de",
   german: "de",
 
-  it: "it",
-  italian: "it",
-
   pt: "pt",
   portuguese: "pt",
 
-  nl: "nl",
-  dutch: "nl",
+  it: "it",
+  italian: "it",
 
   ar: "ar",
   arabic: "ar",
@@ -38,15 +33,10 @@ const LANGUAGE_ALIASES = {
   hi: "hi",
   hindi: "hi",
 
-  bn: "bn",
-  bengali: "bn",
-
-  ur: "ur",
-  urdu: "ur",
-
-  zh: "zh-CN",
-  chinese: "zh-CN",
-  "zh-cn": "zh-CN",
+  zh: "zh",
+  "zh-cn": "zh",
+  "zh_cn": "zh",
+  chinese: "zh",
 
   ja: "ja",
   japanese: "ja",
@@ -57,175 +47,129 @@ const LANGUAGE_ALIASES = {
   ru: "ru",
   russian: "ru",
 
+  nl: "nl",
+  dutch: "nl",
+
   tr: "tr",
   turkish: "tr",
-
-  pl: "pl",
-  polish: "pl",
-
-  uk: "uk",
-  ukrainian: "uk",
-
-  vi: "vi",
-  vietnamese: "vi",
-
-  id: "id",
-  indonesian: "id",
-
-  ms: "ms",
-  malay: "ms",
-
-  ro: "ro",
-  romanian: "ro",
-
-  cs: "cs",
-  czech: "cs",
-
-  el: "el",
-  greek: "el",
-
-  he: "he",
-  hebrew: "he",
-
-  fa: "fa",
-  persian: "fa",
-
-  th: "th",
-  thai: "th",
-
-  sv: "sv",
-  swedish: "sv",
-
-  da: "da",
-  danish: "da",
-
-  no: "no",
-  norwegian: "no",
-
-  fi: "fi",
-  finnish: "fi",
-
-  hu: "hu",
-  hungarian: "hu",
-
-  sk: "sk",
-  slovak: "sk",
-
-  bg: "bg",
-  bulgarian: "bg",
-
-  hr: "hr",
-  croatian: "hr",
-
-  ca: "ca",
-  catalan: "ca",
 };
 
 function normalizeLanguage(language) {
-  if (!language) {
-    return null;
-  }
+  if (!language) return null;
 
-  const value = String(language).trim().toLowerCase();
-
-  return LANGUAGE_ALIASES[value] || value;
+  return (
+    LANGUAGE_ALIASES[
+      String(language).trim().toLowerCase()
+    ] || null
+  );
 }
 
-function cleanText(text) {
-  return String(text || "")
-    .trim()
-    .replace(/\s+/g, " ");
-}
+async function detectLanguage(text) {
+  const response = await axios.post(
+    `${LIBRETRANSLATE_URL}/detect`,
+    {
+      q: text,
+    },
+    {
+      timeout: 30000,
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+    }
+  );
 
-function buildLanguagePair(sourceLanguage, targetLanguage) {
-  const source = sourceLanguage || "autodetect";
-  const target = targetLanguage;
-
-  return `${source}|${target}`;
+  return response.data?.[0]?.language || null;
 }
 
 async function translateText({
   text,
   targetLanguage,
-  sourceLanguage = null,
+  sourceLanguage,
 }) {
-  const clean = cleanText(text);
-
-  if (!clean) {
-    throw new Error("Text cannot be empty");
+  if (!LIBRETRANSLATE_URL) {
+    throw new Error(
+      "LIBRETRANSLATE_URL is not configured"
+    );
   }
 
-  if (clean.length > MAX_TRANSLATION_LENGTH) {
+  if (!text || !text.trim()) {
+    throw new Error("Text is required");
+  }
+
+  const cleanText = text.trim();
+
+  if (cleanText.length > MAX_TRANSLATION_LENGTH) {
     throw new Error(
       `Text cannot exceed ${MAX_TRANSLATION_LENGTH} characters`
     );
   }
 
   const target = normalizeLanguage(targetLanguage);
-  const source = normalizeLanguage(sourceLanguage);
 
   if (!target) {
-    throw new Error("Target language is required");
+    throw new Error(
+      `Unsupported target language: ${targetLanguage}`
+    );
   }
 
-  if (source && source === target) {
+  let source = sourceLanguage
+    ? normalizeLanguage(sourceLanguage)
+    : null;
+
+  if (sourceLanguage && !source) {
+    throw new Error(
+      `Unsupported source language: ${sourceLanguage}`
+    );
+  }
+
+  if (!source) {
+    source = await detectLanguage(cleanText);
+  }
+
+  if (source === target) {
     return {
-      translatedText: clean,
+      translatedText: cleanText,
       detectedSourceLanguage: source,
       targetLanguage: target,
       skipped: true,
     };
   }
 
-  const langpair = buildLanguagePair(source, target);
-
-  try {
-    const response = await axios.get(MYMEMORY_URL, {
-      params: {
-        q: clean,
-        langpair,
+  const response = await axios.post(
+    `${LIBRETRANSLATE_URL}/translate`,
+    {
+      q: cleanText,
+      source: source || "auto",
+      target,
+      format: "text",
+    },
+    {
+      timeout: 60000,
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
       },
-      timeout: 15000,
-    });
-
-    const data = response?.data;
-
-    if (!data) {
-      throw new Error("Translation service returned an empty response");
     }
+  );
 
-    if (data.responseStatus && Number(data.responseStatus) !== 200) {
-      throw new Error(
-        data.responseDetails || "Translation service request failed"
-      );
-    }
+  const translatedText =
+    response.data?.translatedText;
 
-    const translatedText =
-      data?.responseData?.translatedText?.trim() || "";
-
-    if (!translatedText) {
-      throw new Error("Translation service returned no translated text");
-    }
-
-    return {
-      translatedText,
-      detectedSourceLanguage:
-        data?.responseData?.detectedLanguage || source || null,
-      targetLanguage: target,
-      skipped: false,
-    };
-  } catch (error) {
-    console.error(
-      "MYMEMORY TRANSLATION ERROR:",
-      error?.response?.data || error?.message || error
-    );
-
+  if (!translatedText) {
     throw new Error(
-      error?.response?.data?.responseDetails ||
-        error?.message ||
-        "Translation failed"
+      "LibreTranslate returned no translated text"
     );
   }
+
+  return {
+    translatedText,
+    detectedSourceLanguage:
+      response.data?.detectedLanguage?.language ||
+      source,
+    targetLanguage: target,
+    skipped: false,
+  };
 }
 
 module.exports = {

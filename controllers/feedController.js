@@ -37,11 +37,6 @@ async function getHomeFeed(req, res) {
         )
       : [];
 
-    /*
-     * The home feed contains:
-     * - the authenticated user's own posts
-     * - posts from people they follow
-     */
     const feedUserIds = [
       userId,
       ...followingIds,
@@ -56,13 +51,6 @@ async function getHomeFeed(req, res) {
       ).values(),
     ];
 
-    /*
-     * Include both:
-     * - normal posts
-     * - reels
-     *
-     * Stories are NOT Posts and therefore do not belong here.
-     */
     const posts = await Post.find({
       user: {
         $in: uniqueFeedUserIds,
