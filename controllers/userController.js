@@ -31,21 +31,17 @@ function formatUser(user) {
 
 async function getUserProfile(req, res) {
   try {
-    const username = String(
-      req.params.username || ""
-    )
-      .trim()
-      .toLowerCase();
+    const userId = String(
+      req.params.userId || ""
+    ).trim();
 
-    if (!username) {
+    if (!userId) {
       return res.status(400).json({
-        message: "Username is required",
+        message: "User ID is required",
       });
     }
 
-    const user = await User.findOne({
-      username,
-    })
+    const user = await User.findById(userId)
       .select(
         [
           "_id",
@@ -459,20 +455,21 @@ async function getSavedPosts(req, res) {
 
 async function getUserPosts(req, res) {
   try {
-    const username = String(
-      req.params.username || ""
-    )
-      .trim()
-      .toLowerCase();
+    const userId = String(
+      req.params.userId || ""
+    ).trim();
 
-    const user =
-      await User.findOne({
-        username,
-      })
-        .select(
-          "_id username fullName avatar isPrivate isVerified"
-        )
-        .lean();
+    if (!userId) {
+      return res.status(400).json({
+        message: "User ID is required",
+      });
+    }
+
+    const user = await User.findById(userId)
+      .select(
+        "_id username fullName avatar isPrivate isVerified"
+      )
+      .lean();
 
     if (!user) {
       return res.status(404).json({
@@ -480,18 +477,17 @@ async function getUserPosts(req, res) {
       });
     }
 
-    const posts =
-      await Post.find({
-        user: user._id,
+    const posts = await Post.find({
+      user: user._id,
+    })
+      .populate(
+        "user",
+        "username fullName avatar isVerified"
+      )
+      .sort({
+        createdAt: -1,
       })
-        .populate(
-          "user",
-          "username fullName avatar isVerified"
-        )
-        .sort({
-          createdAt: -1,
-        })
-        .lean();
+      .lean();
 
     return res.json({
       posts,

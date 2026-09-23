@@ -6,8 +6,7 @@ const UserSession = require("../models/UserSession");
 
 async function protect(req, res, next) {
   try {
-    const authorization =
-      req.headers.authorization;
+    const authorization = req.headers.authorization;
 
     if (
       !authorization ||
@@ -18,9 +17,7 @@ async function protect(req, res, next) {
       });
     }
 
-    const token = authorization
-      .slice(7)
-      .trim();
+    const token = authorization.slice(7).trim();
 
     if (!token) {
       return res.status(401).json({
@@ -34,8 +31,7 @@ async function protect(req, res, next) {
       );
 
       return res.status(500).json({
-        message:
-          "Authentication configuration error",
+        message: "Authentication configuration error",
       });
     }
 
@@ -52,40 +48,32 @@ async function protect(req, res, next) {
       });
     }
 
-    if (
-      !mongoose.Types.ObjectId.isValid(userId)
-    ) {
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
       return res.status(401).json({
-        message:
-          "Invalid user identity in token",
+        message: "Invalid user identity in token",
       });
     }
 
-    const user = await User.findById(
-      userId
-    );
+    const user = await User.findById(userId);
 
     if (!user) {
       return res.status(401).json({
-        message:
-          "User no longer exists",
+        message: "User no longer exists",
       });
     }
 
     if (user.isDeactivated) {
       return res.status(403).json({
-        message:
-          "This account is deactivated",
+        message: "This account is deactivated",
       });
     }
 
     if (decoded.sessionId) {
-      const session =
-        await UserSession.findOne({
-          sessionId: decoded.sessionId,
-          user: user._id,
-          revokedAt: null,
-        });
+      const session = await UserSession.findOne({
+        sessionId: decoded.sessionId,
+        user: user._id,
+        revokedAt: null,
+      });
 
       if (!session) {
         return res.status(401).json({
@@ -104,6 +92,13 @@ async function protect(req, res, next) {
     req.user = user;
     req.userId = user._id;
 
+    // Temporary debugging for the New Message issue.
+    console.log("[AUTH DEBUG] authenticated user:", {
+      id: String(user._id),
+      username: user.username,
+      email: user.email,
+    });
+
     return next();
   } catch (error) {
     console.error(
@@ -111,34 +106,26 @@ async function protect(req, res, next) {
       error.message
     );
 
-    if (
-      error.name === "TokenExpiredError"
-    ) {
+    if (error.name === "TokenExpiredError") {
       return res.status(401).json({
         message: "Token expired",
       });
     }
 
-    if (
-      error.name === "JsonWebTokenError"
-    ) {
+    if (error.name === "JsonWebTokenError") {
       return res.status(401).json({
         message: "Invalid token",
       });
     }
 
-    if (
-      error.name === "CastError"
-    ) {
+    if (error.name === "CastError") {
       return res.status(401).json({
-        message:
-          "Invalid user identity",
+        message: "Invalid user identity",
       });
     }
 
     return res.status(401).json({
-      message:
-        "Invalid or expired token",
+      message: "Invalid or expired token",
     });
   }
 }

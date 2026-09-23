@@ -84,6 +84,13 @@ try {
 const { userId } = req.params;
 const currentUserId = req.user._id;
 
+console.log("[MESSAGE DEBUG] currentUserId:", String(currentUserId));
+console.log("[MESSAGE DEBUG] requested userId:", String(userId));
+console.log(
+  "[MESSAGE DEBUG] equal:",
+  String(userId) === String(currentUserId)
+);
+
 if (!isValidObjectId(userId)) {
   return res.status(400).json({
     success: false,

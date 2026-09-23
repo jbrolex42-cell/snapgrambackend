@@ -20,7 +20,7 @@ router.get(
 );
 
 router.get(
-  "/profile/:username",
+  "/profile/:userId",
   protect,
   getUserProfile
 );
@@ -39,7 +39,7 @@ router.get(
 );
 
 router.get(
-  "/:username/posts",
+  "/:userId/posts",
   protect,
   getUserPosts
 );
