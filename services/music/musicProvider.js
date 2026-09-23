@@ -7,27 +7,36 @@ const API_KEY =
 
 function assertConfigured() {
   if (!API_KEY) {
-    throw new Error(
+    const error = new Error(
       "EPIDEMIC_SOUND_API_KEY is not configured"
     );
+
+    error.status = 500;
+
+    throw error;
   }
 }
 
 async function epidemicRequest(path, options = {}) {
   assertConfigured();
 
-  const response = await fetch(
-    `${BASE_URL}${path}`,
-    {
-      ...options,
+  const url = `${BASE_URL}${path}`;
 
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${API_KEY}`,
-        ...(options.headers || {}),
-      },
-    }
-  );
+  console.log("[EPIDEMIC REQUEST]", {
+    url,
+    method: options.method || "GET",
+    hasApiKey: Boolean(API_KEY),
+  });
+
+  const response = await fetch(url, {
+    ...options,
+
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${API_KEY}`,
+      ...(options.headers || {}),
+    },
+  });
 
   let data = null;
 
@@ -38,14 +47,15 @@ async function epidemicRequest(path, options = {}) {
   }
 
   if (!response.ok) {
-    console.error(
-      "[EPIDEMIC]",
-      response.status,
-      data
-    );
+    console.error("[EPIDEMIC ERROR]", {
+      status: response.status,
+      data,
+      url,
+    });
 
     const error = new Error(
       data?.message ||
+        data?.error ||
         `Epidemic API error ${response.status}`
     );
 
@@ -63,11 +73,13 @@ function normalizeTrack(track) {
     return null;
   }
 
+  const id =
+    track.id ||
+    track.trackId ||
+    "";
+
   return {
-    id:
-      track.id ||
-      track.trackId ||
-      "",
+    id,
 
     title:
       track.title ||
@@ -92,38 +104,33 @@ function normalizeTrack(track) {
       track.imageUrl ||
       "",
 
-    audioUrl:
-      "",
+    audioUrl: "",
 
     durationMs:
       Number(
         track.durationMs ||
-        (track.duration
-          ? Number(track.duration) * 1000
-          : 0)
+          (
+            track.duration
+              ? Number(track.duration) * 1000
+              : 0
+          )
       ),
 
-    provider:
-      "epidemic",
+    provider: "epidemic",
 
-    providerTrackId:
-      track.id ||
-      track.trackId ||
-      "",
+    providerTrackId: id,
 
     genre:
       track.genre?.name ||
       track.genre ||
       "",
 
-    explicit:
-      Boolean(
-        track.isExplicit ||
+    explicit: Boolean(
+      track.isExplicit ||
         track.explicit
-      ),
+    ),
 
-    isFeatured:
-      false,
+    isFeatured: false,
 
     playCount:
       Number(track.playCount || 0),
@@ -137,7 +144,7 @@ async function searchTracks({
   query = "",
   page = 1,
   limit = 20,
-}) {
+} = {}) {
   const safePage = Math.max(
     Number(page) || 1,
     1
@@ -153,10 +160,23 @@ async function searchTracks({
 
   const params = new URLSearchParams();
 
-  if (query) {
+  /*
+   * Only send `term` when the user actually
+   * supplied a search query.
+   *
+   * This avoids sending:
+   *
+   * term=
+   *
+   * to the provider.
+   */
+  const normalizedQuery =
+    String(query || "").trim();
+
+  if (normalizedQuery) {
     params.set(
       "term",
-      String(query).trim()
+      normalizedQuery
     );
   }
 
@@ -185,9 +205,12 @@ async function searchTracks({
     "false"
   );
 
+  const queryString =
+    params.toString();
+
   const data =
     await epidemicRequest(
-      `/v0/tracks/search?${params.toString()}`
+      `/v0/tracks/search?${queryString}`
     );
 
   const rawTracks =
@@ -206,17 +229,14 @@ async function searchTracks({
   const total =
     Number(
       pagination.total ??
-      data?.total ??
-      tracks.length
+        data?.total ??
+        tracks.length
     );
 
   return {
     tracks,
-
     page: safePage,
-
     limit: safeLimit,
-
     total,
 
     hasMore:
@@ -224,9 +244,7 @@ async function searchTracks({
   };
 }
 
-async function getFeaturedTracks(
-  limit = 20
-) {
+async function getFeaturedTracks(limit = 20) {
   const result =
     await searchTracks({
       query: "",
@@ -237,9 +255,7 @@ async function getFeaturedTracks(
   return result.tracks;
 }
 
-async function getPopularTracks(
-  limit = 20
-) {
+async function getPopularTracks(limit = 20) {
   const result =
     await searchTracks({
       query: "",
@@ -250,9 +266,7 @@ async function getPopularTracks(
   return result.tracks;
 }
 
-async function getTrackById(
-  providerTrackId
-) {
+async function getTrackById(providerTrackId) {
   if (!providerTrackId) {
     return null;
   }
@@ -280,13 +294,15 @@ async function getTrackById(
   );
 }
 
-async function getTrackPreview(
-  providerTrackId
-) {
+async function getTrackPreview(providerTrackId) {
   if (!providerTrackId) {
-    throw new Error(
+    const error = new Error(
       "Track ID is required"
     );
+
+    error.status = 400;
+
+    throw error;
   }
 
   return epidemicRequest(
@@ -301,9 +317,13 @@ async function getTrackDownload(
   quality = "normal"
 ) {
   if (!providerTrackId) {
-    throw new Error(
+    const error = new Error(
       "Track ID is required"
     );
+
+    error.status = 400;
+
+    throw error;
   }
 
   const params =
@@ -333,9 +353,13 @@ async function createTrackVersion(
   durationMs
 ) {
   if (!providerTrackId) {
-    throw new Error(
+    const error = new Error(
       "Track ID is required"
     );
+
+    error.status = 400;
+
+    throw error;
   }
 
   return epidemicRequest(
@@ -359,13 +383,15 @@ async function createTrackVersion(
   );
 }
 
-async function getTrackVersion(
-  jobId
-) {
+async function getTrackVersion(jobId) {
   if (!jobId) {
-    throw new Error(
+    const error = new Error(
       "Job ID is required"
     );
+
+    error.status = 400;
+
+    throw error;
   }
 
   return epidemicRequest(
@@ -375,6 +401,12 @@ async function getTrackVersion(
   );
 }
 
+/*
+ * These are intentionally no-ops for now.
+ *
+ * If you want real play/use analytics,
+ * connect these to MusicTrack/MongoDB.
+ */
 async function incrementPlayCount() {
   return;
 }
@@ -385,24 +417,14 @@ async function incrementUseCount() {
 
 module.exports = {
   normalizeTrack,
-
   searchTracks,
-
   getFeaturedTracks,
-
   getPopularTracks,
-
   getTrackById,
-
   getTrackPreview,
-
   getTrackDownload,
-
   createTrackVersion,
-
   getTrackVersion,
-
   incrementPlayCount,
-
   incrementUseCount,
 };

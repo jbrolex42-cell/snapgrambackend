@@ -22,108 +22,94 @@ function getUserId(req) {
 
 async function searchMusic(req, res) {
   try {
-    const result =
-      await searchTracks({
-        query: req.query.q || "",
-        page: req.query.page || 1,
-        limit: req.query.limit || 20,
-      });
+    const result = await searchTracks({
+      query: req.query.q || "",
+      page: req.query.page || 1,
+      limit: req.query.limit || 20,
+    });
 
     return res.json({
       success: true,
       ...result,
     });
   } catch (error) {
-    console.error(
-      "[MUSIC] SEARCH ERROR:",
-      error
-    );
+    console.error("[MUSIC] SEARCH ERROR:", {
+      message: error?.message,
+      status: error?.status,
+      data: error?.data,
+      stack: error?.stack,
+    });
 
-    return res.status(
-      error.status || 500
-    ).json({
+    return res.status(error.status || 500).json({
       success: false,
-      message:
-        "Unable to search music.",
+      message: "Unable to search music.",
     });
   }
 }
 
-async function getFeaturedMusic(
-  req,
-  res
-) {
+async function getFeaturedMusic(req, res) {
   try {
-    const tracks =
-      await getFeaturedTracks(
-        req.query.limit || 20
-      );
+    const tracks = await getFeaturedTracks(
+      req.query.limit || 20
+    );
 
     return res.json({
       success: true,
       tracks,
     });
   } catch (error) {
-    console.error(
-      "[MUSIC] FEATURED ERROR:",
-      error
-    );
+    console.error("[MUSIC] FEATURED ERROR:", {
+      message: error?.message,
+      status: error?.status,
+      data: error?.data,
+      stack: error?.stack,
+    });
 
-    return res.status(
-      error.status || 500
-    ).json({
+    return res.status(error.status || 500).json({
       success: false,
-      message:
-        "Unable to load featured music.",
+      message: "Unable to load featured music.",
+      ...(process.env.NODE_ENV !== "production" && {
+        providerError: error?.message,
+        providerStatus: error?.status,
+        providerData: error?.data,
+      }),
     });
   }
 }
 
-async function getPopularMusic(
-  req,
-  res
-) {
+async function getPopularMusic(req, res) {
   try {
-    const tracks =
-      await getPopularTracks(
-        req.query.limit || 20
-      );
+    const tracks = await getPopularTracks(
+      req.query.limit || 20
+    );
 
     return res.json({
       success: true,
       tracks,
     });
   } catch (error) {
-    console.error(
-      "[MUSIC] POPULAR ERROR:",
-      error
-    );
+    console.error("[MUSIC] POPULAR ERROR:", {
+      message: error?.message,
+      status: error?.status,
+      data: error?.data,
+      stack: error?.stack,
+    });
 
-    return res.status(
-      error.status || 500
-    ).json({
+    return res.status(error.status || 500).json({
       success: false,
-      message:
-        "Unable to load popular music.",
+      message: "Unable to load popular music.",
     });
   }
 }
 
-async function getMusicTrack(
-  req,
-  res
-) {
+async function getMusicTrack(req, res) {
   try {
-    const track =
-      await getTrackById(
-        req.params.id
-      );
+    const track = await getTrackById(req.params.id);
 
     if (!track) {
       return res.status(404).json({
         success: false,
-        message:
-          "Music track not found.",
+        message: "Music track not found.",
       });
     }
 
@@ -132,30 +118,25 @@ async function getMusicTrack(
       track,
     });
   } catch (error) {
-    console.error(
-      "[MUSIC] GET TRACK ERROR:",
-      error
-    );
+    console.error("[MUSIC] GET TRACK ERROR:", {
+      message: error?.message,
+      status: error?.status,
+      data: error?.data,
+      stack: error?.stack,
+    });
 
-    return res.status(
-      error.status || 500
-    ).json({
+    return res.status(error.status || 500).json({
       success: false,
-      message:
-        "Unable to load music track.",
+      message: "Unable to load music track.",
     });
   }
 }
 
-async function previewMusic(
-  req,
-  res
-) {
+async function previewMusic(req, res) {
   try {
-    const preview =
-      await getTrackPreview(
-        req.params.id
-      );
+    const preview = await getTrackPreview(
+      req.params.id
+    );
 
     return res.json({
       success: true,
@@ -163,36 +144,31 @@ async function previewMusic(
       ...preview,
     });
   } catch (error) {
-    console.error(
-      "[MUSIC] PREVIEW ERROR:",
-      error
-    );
+    console.error("[MUSIC] PREVIEW ERROR:", {
+      message: error?.message,
+      status: error?.status,
+      data: error?.data,
+      stack: error?.stack,
+    });
 
-    return res.status(
-      error.status || 500
-    ).json({
+    return res.status(error.status || 500).json({
       success: false,
-      message:
-        "Unable to preview music.",
+      message: "Unable to preview music.",
     });
   }
 }
 
-async function downloadMusic(
-  req,
-  res
-) {
+async function downloadMusic(req, res) {
   try {
     const quality =
       req.query.quality === "high"
         ? "high"
         : "normal";
 
-    const result =
-      await getTrackDownload(
-        req.params.id,
-        quality
-      );
+    const result = await getTrackDownload(
+      req.params.id,
+      quality
+    );
 
     return res.json({
       success: true,
@@ -200,39 +176,33 @@ async function downloadMusic(
       ...result,
     });
   } catch (error) {
-    console.error(
-      "[MUSIC] DOWNLOAD ERROR:",
-      error
-    );
+    console.error("[MUSIC] DOWNLOAD ERROR:", {
+      message: error?.message,
+      status: error?.status,
+      data: error?.data,
+      stack: error?.stack,
+    });
 
-    return res.status(
-      error.status || 500
-    ).json({
+    return res.status(error.status || 500).json({
       success: false,
-      message:
-        "Unable to prepare music.",
+      message: "Unable to prepare music.",
     });
   }
 }
 
-async function createMusicVersion(
-  req,
-  res
-) {
+async function createMusicVersion(req, res) {
   try {
     const {
       trackId,
       durationMs,
     } = req.body;
 
-    const duration =
-      Number(durationMs);
+    const duration = Number(durationMs);
 
     if (!trackId) {
       return res.status(400).json({
         success: false,
-        message:
-          "Track ID is required.",
+        message: "Track ID is required.",
       });
     }
 
@@ -248,41 +218,35 @@ async function createMusicVersion(
       });
     }
 
-    const result =
-      await createTrackVersion(
-        trackId,
-        duration
-      );
+    const result = await createTrackVersion(
+      trackId,
+      duration
+    );
 
     return res.json({
       success: true,
       ...result,
     });
   } catch (error) {
-    console.error(
-      "[MUSIC] VERSION ERROR:",
-      error
-    );
+    console.error("[MUSIC] VERSION ERROR:", {
+      message: error?.message,
+      status: error?.status,
+      data: error?.data,
+      stack: error?.stack,
+    });
 
-    return res.status(
-      error.status || 500
-    ).json({
+    return res.status(error.status || 500).json({
       success: false,
-      message:
-        "Unable to create music version.",
+      message: "Unable to create music version.",
     });
   }
 }
 
-async function getMusicVersion(
-  req,
-  res
-) {
+async function getMusicVersion(req, res) {
   try {
-    const result =
-      await getTrackVersion(
-        req.params.jobId
-      );
+    const result = await getTrackVersion(
+      req.params.jobId
+    );
 
     return res.json({
       success: true,
@@ -291,78 +255,70 @@ async function getMusicVersion(
   } catch (error) {
     console.error(
       "[MUSIC] VERSION STATUS ERROR:",
-      error
+      {
+        message: error?.message,
+        status: error?.status,
+        data: error?.data,
+        stack: error?.stack,
+      }
     );
 
-    return res.status(
-      error.status || 500
-    ).json({
+    return res.status(error.status || 500).json({
       success: false,
-      message:
-        "Unable to check music version.",
+      message: "Unable to check music version.",
     });
   }
 }
 
-async function playMusic(
-  req,
-  res
-) {
+async function playMusic(req, res) {
   try {
-    await incrementPlayCount(
-      req.params.id
-    );
+    await incrementPlayCount(req.params.id);
 
     return res.json({
       success: true,
     });
   } catch (error) {
-    console.error(
-      "[MUSIC] PLAY ERROR:",
-      error
-    );
+    console.error("[MUSIC] PLAY ERROR:", {
+      message: error?.message,
+      status: error?.status,
+      data: error?.data,
+      stack: error?.stack,
+    });
 
     return res.status(500).json({
       success: false,
-      message:
-        "Unable to record music play.",
+      message: "Unable to record music play.",
     });
   }
 }
 
-async function useMusic(
-  req,
-  res
-) {
+async function useMusic(req, res) {
   try {
-    const userId =
-      getUserId(req);
+    const userId = getUserId(req);
 
     if (!userId) {
       return res.status(401).json({
         success: false,
-        message:
-          "Authentication required.",
+        message: "Authentication required.",
       });
     }
 
-    await incrementUseCount(
-      req.params.id
-    );
+    await incrementUseCount(req.params.id);
 
     return res.json({
       success: true,
     });
   } catch (error) {
-    console.error(
-      "[MUSIC] USE ERROR:",
-      error
-    );
+    console.error("[MUSIC] USE ERROR:", {
+      message: error?.message,
+      status: error?.status,
+      data: error?.data,
+      stack: error?.stack,
+    });
 
     return res.status(500).json({
       success: false,
-      message:
-        "Unable to record music usage.",
+      message: "Unable to record music usage.",
     });
   }
 }
