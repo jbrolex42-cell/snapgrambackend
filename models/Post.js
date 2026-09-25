@@ -165,6 +165,12 @@ const postSchema = new mongoose.Schema(
       min: 0,
     },
 
+    views: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     visibility: {
       type: String,
       enum: ["public", "followers", "private"],
