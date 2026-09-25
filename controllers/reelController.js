@@ -1,4 +1,4 @@
-const Reel = require("../models/Reel");
+const Post = require("../models/Post");
 const cloudinary = require("../config/cloudinary");
 const streamifier = require("streamifier");
 
@@ -711,3 +711,10 @@ module.exports = {
   saveReel,
   incrementViews,
 };
+
+Post.find({
+  postType: "reel",
+  isArchived: {
+    $ne: true,
+  },
+});

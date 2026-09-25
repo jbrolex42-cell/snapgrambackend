@@ -160,16 +160,6 @@ async function searchTracks({
 
   const params = new URLSearchParams();
 
-  /*
-   * Only send `term` when the user actually
-   * supplied a search query.
-   *
-   * This avoids sending:
-   *
-   * term=
-   *
-   * to the provider.
-   */
   const normalizedQuery =
     String(query || "").trim();
 
@@ -401,12 +391,6 @@ async function getTrackVersion(jobId) {
   );
 }
 
-/*
- * These are intentionally no-ops for now.
- *
- * If you want real play/use analytics,
- * connect these to MusicTrack/MongoDB.
- */
 async function incrementPlayCount() {
   return;
 }

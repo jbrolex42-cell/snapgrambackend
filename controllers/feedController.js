@@ -38,23 +38,6 @@ function clamp(value, min, max) {
   );
 }
 
-/*
- * Cursor
- *
- * We intentionally keep the cursor opaque to the mobile app.
- *
- * Current cursor payload:
- *
- * {
- *   offset: number
- * }
- *
- * The offset represents the position in the ranked/
- * diversified candidate list.
- *
- * This works well with our current in-memory ranking system
- * while keeping the client independent from the ranking logic.
- */
 function encodeCursor(offset) {
   const payload = JSON.stringify({
     offset: Number(offset) || 0,
@@ -102,20 +85,6 @@ function decodeCursor(cursor) {
   }
 }
 
-/**
- * Calculate Snapgram Home Feed ranking.
- *
- * Factors:
- * - relationship
- * - freshness
- * - likes
- * - comments
- * - shares
- * - reposts
- * - creator popularity
- * - verification
- * - content type
- */
 function calculateFeedScore(
   post,
   followedIds,
@@ -146,13 +115,6 @@ function calculateFeedScore(
       (1000 * 60 * 60)
   );
 
-  /*
-   * Freshness.
-   *
-   * Newer posts receive more weight,
-   * while older high-engagement posts
-   * can still remain relevant.
-   */
   const freshnessScore =
     40 *
     Math.exp(
@@ -175,9 +137,7 @@ function calculateFeedScore(
   } else if (isFollowing) {
     relationshipScore += 24;
   } else {
-    /*
-     * Recommended content remains eligible.
-     */
+
     relationshipScore += 4;
   }
 
@@ -203,12 +163,6 @@ function calculateFeedScore(
       post.repostsCount || 0
     );
 
-  /*
-   * Logarithmic engagement.
-   *
-   * This prevents extremely large accounts
-   * from completely dominating the feed.
-   */
   const engagementScore =
     Math.log1p(
       likesCount
@@ -254,12 +208,6 @@ function calculateFeedScore(
   );
 }
 
-/**
- * Diversify creators.
- *
- * Prefer a different creator once an author
- * has already appeared twice.
- */
 function diversifyPosts(
   posts,
   limit
@@ -295,11 +243,6 @@ function diversifyPosts(
     let selectedIndex =
       -1;
 
-    /*
-     * First choose a highly ranked post
-     * from an author appearing fewer than
-     * two times.
-     */
     for (
       let i = 0;
       i < remaining.length;
@@ -325,11 +268,6 @@ function diversifyPosts(
       }
     }
 
-    /*
-     * If all remaining creators already
-     * appeared twice, allow the highest
-     * ranked remaining post.
-     */
     if (
       selectedIndex === -1
     ) {
@@ -364,9 +302,6 @@ function diversifyPosts(
   return result;
 }
 
-/**
- * Format a post for mobile.
- */
 function formatPost(
   post,
   currentUserId
@@ -486,9 +421,6 @@ async function getHomeFeed(
       req.user?._id ||
       req.user?.id;
 
-    /*
-     * Authentication.
-     */
     if (
       !userId ||
       !isValidObjectId(
@@ -505,9 +437,6 @@ async function getHomeFeed(
     const currentUserId =
       String(userId);
 
-    /*
-     * Limit.
-     */
     const limit = clamp(
       parseInt(
         req.query.limit,
@@ -517,11 +446,6 @@ async function getHomeFeed(
       MAX_LIMIT
     );
 
-    /*
-     * Decode cursor.
-     *
-     * No cursor = first request.
-     */
     const cursor =
       decodeCursor(
         req.query.cursor
@@ -538,9 +462,6 @@ async function getHomeFeed(
     const start =
       cursor.offset;
 
-    /*
-     * Current user.
-     */
     const currentUser =
       await User.findById(
         userId
@@ -568,12 +489,6 @@ async function getHomeFeed(
       });
     }
 
-    /*
-     * Get actual following relationships.
-     *
-     * IMPORTANT:
-     * User.js does NOT contain a following array.
-     */
     const followingDocs =
       await Follow.find({
         follower: userId,
@@ -605,9 +520,6 @@ async function getHomeFeed(
         )
       );
 
-    /*
-     * Blocked + muted accounts.
-     */
     const blockedIds =
       Array.isArray(
         currentUser.blockedUsers
@@ -634,12 +546,6 @@ async function getHomeFeed(
           toObjectId
         );
 
-    /*
-     * Own account + followed accounts.
-     *
-     * These accounts may show followers-only
-     * content to this user.
-     */
     const relationshipUserIds =
       [
         toObjectId(
@@ -662,18 +568,6 @@ async function getHomeFeed(
         ).values(),
       ];
 
-    /*
-     * Visibility.
-     *
-     * Public:
-     *   everyone
-     *
-     * Followers:
-     *   owner + followers
-     *
-     * Private:
-     *   owner + followers
-     */
     const visibilityQuery = {
       $or: [
         {
@@ -697,18 +591,6 @@ async function getHomeFeed(
       ],
     };
 
-    /*
-     * Home Feed candidates.
-     *
-     * This includes:
-     *
-     * 1. Your own posts
-     * 2. Posts/reels from accounts you follow
-     * 3. Public posts/reels from accounts
-     *    you do NOT follow
-     *
-     * #3 is our recommendation/discovery layer.
-     */
     const postQuery = {
       user: {
         $nin:
@@ -738,9 +620,6 @@ async function getHomeFeed(
       ...visibilityQuery,
     };
 
-    /*
-     * Candidate pool.
-     */
     const candidates =
       await Post.find(
         postQuery
@@ -767,9 +646,6 @@ async function getHomeFeed(
         )
         .lean();
 
-    /*
-     * Remove unavailable authors.
-     */
     const eligibleCandidates =
       candidates.filter(
         (post) => {
@@ -788,9 +664,6 @@ async function getHomeFeed(
         }
       );
 
-    /*
-     * Score candidates.
-     */
     const scoredPosts =
       eligibleCandidates.map(
         (post) => ({
@@ -805,9 +678,6 @@ async function getHomeFeed(
         })
       );
 
-    /*
-     * Deterministic ranking.
-     */
     scoredPosts.sort(
       (a, b) => {
         if (
@@ -860,21 +730,12 @@ async function getHomeFeed(
           item.post
       );
 
-    /*
-     * Diversify the complete candidate pool.
-     *
-     * This is important because pagination should happen
-     * AFTER ranking and diversity.
-     */
     const diversified =
       diversifyPosts(
         rankedPosts,
         rankedPosts.length
       );
 
-    /*
-     * Cursor pagination.
-     */
     const pagePosts =
       diversified.slice(
         start,
@@ -889,17 +750,11 @@ async function getHomeFeed(
       end <
       diversified.length;
 
-    /*
-     * Next cursor.
-     */
     const nextCursor =
       hasMore
         ? encodeCursor(end)
         : null;
 
-    /*
-     * Format.
-     */
     const formattedPosts =
       pagePosts.map(
         (post) =>

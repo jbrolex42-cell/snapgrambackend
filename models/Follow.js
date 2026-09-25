@@ -21,7 +21,6 @@ const followSchema = new mongoose.Schema(
   }
 );
 
-// Prevent duplicate follows
 followSchema.index(
   {
     follower: 1,
@@ -32,13 +31,11 @@ followSchema.index(
   }
 );
 
-// Find a user's followers efficiently
 followSchema.index({
   following: 1,
   createdAt: -1,
 });
 
-// Find who a user follows efficiently
 followSchema.index({
   follower: 1,
   createdAt: -1,

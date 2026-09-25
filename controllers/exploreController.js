@@ -114,14 +114,6 @@ function isPostVisible(post, req) {
   return following.has(authorId);
 }
 
-/*
- * Generate a deterministic layout from the post id.
- *
- * Important:
- * We do NOT randomly generate this on every request.
- * The same post should keep the same layout when pagination
- * or refresh happens.
- */
 function getLayoutFromPost(post, index = 0) {
   const postId = String(
     post?._id ||
@@ -139,14 +131,6 @@ function getLayoutFromPost(post, index = 0) {
 
   const value = Math.abs(hash);
 
-  /*
-   * Keep most posts normal.
-   *
-   * Instagram-style Explore should have:
-   * - many normal squares
-   * - occasional large 2x2 tiles
-   * - occasional wide/tall tiles
-   */
   const bucket = value % 100;
 
   if (bucket < 10) {
@@ -234,9 +218,6 @@ function serializePost(post, index = 0) {
 
     id,
 
-    /*
-     * Layout metadata used by the mobile Explore grid.
-     */
     exploreLayout: getLayoutFromPost(
       post,
       index
@@ -360,12 +341,6 @@ async function getExplorePosts(req, res) {
       )
       .filter(Boolean);
 
-    /*
-     * We intentionally don't use total count here.
-     *
-     * Explore is continuously changing, and visibility
-     * filtering makes count-based pagination expensive.
-     */
     const hasMore =
       visiblePosts.length > limit ||
       visiblePosts.length >= fetchLimit;
@@ -439,9 +414,6 @@ async function search(req, res) {
         getUserId(req)
       );
 
-    /*
-     * USERS
-     */
     const users = await User.find({
       _id: {
         $nin: blockedIds,
@@ -484,9 +456,6 @@ async function search(req, res) {
         );
       });
 
-    /*
-     * POSTS
-     */
     const postFilter = {
       user: {
         $nin: blockedIds,
@@ -547,9 +516,6 @@ async function search(req, res) {
         )
         .filter(Boolean);
 
-    /*
-     * HASHTAGS
-     */
     const hashtags = [];
 
     const normalizedQuery =
@@ -617,9 +583,6 @@ async function search(req, res) {
       }
     }
 
-    /*
-     * REELS
-     */
     const reelFilter = {
       user: {
         $nin: blockedIds,

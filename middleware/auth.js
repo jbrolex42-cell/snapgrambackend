@@ -92,7 +92,6 @@ async function protect(req, res, next) {
     req.user = user;
     req.userId = user._id;
 
-    // Temporary debugging for the New Message issue.
     console.log("[AUTH DEBUG] authenticated user:", {
       id: String(user._id),
       username: user.username,

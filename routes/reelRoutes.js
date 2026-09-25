@@ -2,14 +2,9 @@ const express = require("express");
 
 const router = express.Router();
 
-const upload =
-  require("../middleware/uploadMiddleware");
-
-const protect =
-  require("../middleware/auth");
+const protect = require("../middleware/auth");
 
 const {
-  createReel,
   getReels,
   getReel,
   likeReel,
@@ -29,13 +24,6 @@ router.get(
   "/:id",
   protect,
   getReel
-);
-
-router.post(
-  "/",
-  protect,
-  upload.single("video"),
-  createReel
 );
 
 router.post(
