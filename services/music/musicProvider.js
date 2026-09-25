@@ -2,8 +2,7 @@ const BASE_URL =
   process.env.EPIDEMIC_SOUND_API_URL ||
   "https://partner-content-api.epidemicsound.com";
 
-const API_KEY =
-  process.env.EPIDEMIC_SOUND_API_KEY;
+const API_KEY = process.env.EPIDEMIC_SOUND_API_KEY;
 
 function assertConfigured() {
   if (!API_KEY) {
@@ -12,7 +11,6 @@ function assertConfigured() {
     );
 
     error.status = 500;
-
     throw error;
   }
 }
@@ -38,17 +36,20 @@ async function epidemicRequest(path, options = {}) {
     },
   });
 
+  const rawText = await response.text();
+
   let data = null;
 
   try {
-    data = await response.json();
+    data = rawText ? JSON.parse(rawText) : null;
   } catch {
-    data = null;
+    data = rawText;
   }
 
   if (!response.ok) {
     console.error("[EPIDEMIC ERROR]", {
       status: response.status,
+      statusText: response.statusText,
       data,
       url,
     });
@@ -65,6 +66,25 @@ async function epidemicRequest(path, options = {}) {
     throw error;
   }
 
+  console.log("[EPIDEMIC RESPONSE]", {
+    status: response.status,
+    url,
+    type: Array.isArray(data)
+      ? "array"
+      : typeof data,
+    keys:
+      data &&
+      typeof data === "object" &&
+      !Array.isArray(data)
+        ? Object.keys(data)
+        : [],
+    trackCount: Array.isArray(data?.tracks)
+      ? data.tracks.length
+      : Array.isArray(data?.data)
+      ? data.data.length
+      : undefined,
+  });
+
   return data;
 }
 
@@ -76,49 +96,81 @@ function normalizeTrack(track) {
   const id =
     track.id ||
     track.trackId ||
+    track.uuid ||
     "";
 
+  if (!id) {
+    return null;
+  }
+
+  const artist =
+    track.artist?.name ||
+    track.artist ||
+    track.artists?.[0]?.name ||
+    "";
+
+  const album =
+    track.album?.name ||
+    track.album ||
+    "";
+
+  const artworkUrl =
+    track.coverArt?.url ||
+    track.coverArt ||
+    track.cover?.url ||
+    track.cover ||
+    track.image?.url ||
+    track.image ||
+    track.imageUrl ||
+    "";
+
+  let durationMs = Number(
+    track.durationMs ||
+      track.duration_ms ||
+      0
+  );
+
+  if (
+    !durationMs &&
+    track.duration != null
+  ) {
+    const durationNumber =
+      Number(track.duration);
+
+    if (
+      Number.isFinite(durationNumber)
+    ) {
+      durationMs =
+        durationNumber < 10000
+          ? durationNumber * 1000
+          : durationNumber;
+    }
+  }
+
   return {
-    id,
+    id: String(id),
 
     title:
       track.title ||
       track.name ||
       "",
 
-    artist:
-      track.artist?.name ||
-      track.artist ||
-      track.artists?.[0]?.name ||
-      "",
+    artist,
 
-    album:
-      track.album?.name ||
-      track.album ||
-      "",
+    album,
 
-    artworkUrl:
-      track.coverArt?.url ||
-      track.cover?.url ||
-      track.image?.url ||
-      track.imageUrl ||
-      "",
+    artworkUrl,
 
+    // Epidemic preview/download URLs
+    // are obtained through their dedicated
+    // endpoints, so this remains empty here.
     audioUrl: "",
 
-    durationMs:
-      Number(
-        track.durationMs ||
-          (
-            track.duration
-              ? Number(track.duration) * 1000
-              : 0
-          )
-      ),
+    durationMs,
 
     provider: "epidemic",
 
-    providerTrackId: id,
+    providerTrackId: String(id),
 
     genre:
       track.genre?.name ||
@@ -130,14 +182,47 @@ function normalizeTrack(track) {
         track.explicit
     ),
 
-    isFeatured: false,
+    isFeatured: Boolean(
+      track.isFeatured ||
+        track.featured
+    ),
 
-    playCount:
-      Number(track.playCount || 0),
+    playCount: Number(
+      track.playCount || 0
+    ),
 
-    useCount:
-      Number(track.useCount || 0),
+    useCount: Number(
+      track.useCount || 0
+    ),
   };
+}
+
+function extractTracks(data) {
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  if (Array.isArray(data?.tracks)) {
+    return data.tracks;
+  }
+
+  if (Array.isArray(data?.data)) {
+    return data.data;
+  }
+
+  if (Array.isArray(data?.results)) {
+    return data.results;
+  }
+
+  if (
+    Array.isArray(
+      data?.items
+    )
+  ) {
+    return data.items;
+  }
+
+  return [];
 }
 
 async function searchTracks({
@@ -151,18 +236,29 @@ async function searchTracks({
   );
 
   const safeLimit = Math.min(
-    Math.max(Number(limit) || 20, 1),
+    Math.max(
+      Number(limit) || 20,
+      1
+    ),
     50
   );
 
   const offset =
     (safePage - 1) * safeLimit;
 
-  const params = new URLSearchParams();
+  const params =
+    new URLSearchParams();
 
   const normalizedQuery =
     String(query || "").trim();
 
+  /*
+   * Only send "term" when the user
+   * actually searched for something.
+   *
+   * Do NOT send:
+   * term=
+   */
   if (normalizedQuery) {
     params.set(
       "term",
@@ -204,9 +300,7 @@ async function searchTracks({
     );
 
   const rawTracks =
-    Array.isArray(data?.tracks)
-      ? data.tracks
-      : [];
+    extractTracks(data);
 
   const tracks =
     rawTracks
@@ -216,12 +310,23 @@ async function searchTracks({
   const pagination =
     data?.pagination || {};
 
-  const total =
-    Number(
-      pagination.total ??
-        data?.total ??
-        tracks.length
-    );
+  const total = Number(
+    pagination.total ??
+      data?.total ??
+      tracks.length
+  );
+
+  console.log(
+    "[MUSIC SEARCH RESULT]",
+    {
+      query: normalizedQuery,
+      page: safePage,
+      limit: safeLimit,
+      received: rawTracks.length,
+      normalized: tracks.length,
+      total,
+    }
+  );
 
   return {
     tracks,
@@ -230,33 +335,136 @@ async function searchTracks({
     total,
 
     hasMore:
-      tracks.length === safeLimit,
+      tracks.length ===
+      safeLimit,
   };
 }
 
-async function getFeaturedTracks(limit = 20) {
-  const result =
-    await searchTracks({
-      query: "",
-      page: 1,
-      limit,
-    });
+/*
+ * Featured
+ *
+ * Epidemic's search endpoint should not
+ * receive an empty "term".
+ *
+ * We first try the catalog/search endpoint
+ * without a search term.
+ */
+async function getFeaturedTracks(
+  limit = 20
+) {
+  const safeLimit = Math.min(
+    Math.max(
+      Number(limit) || 20,
+      1
+    ),
+    50
+  );
 
-  return result.tracks;
+  const params =
+    new URLSearchParams();
+
+  params.set(
+    "limit",
+    String(safeLimit)
+  );
+
+  params.set(
+    "offset",
+    "0"
+  );
+
+  params.set(
+    "includeExplicit",
+    "false"
+  );
+
+  const data =
+    await epidemicRequest(
+      `/v0/tracks/search?${params.toString()}`
+    );
+
+  const rawTracks =
+    extractTracks(data);
+
+  const tracks =
+    rawTracks
+      .map(normalizeTrack)
+      .filter(Boolean);
+
+  console.log(
+    "[MUSIC FEATURED RESULT]",
+    {
+      received: rawTracks.length,
+      normalized: tracks.length,
+    }
+  );
+
+  return tracks;
 }
 
-async function getPopularTracks(limit = 20) {
-  const result =
-    await searchTracks({
-      query: "",
-      page: 1,
-      limit,
-    });
+/*
+ * Popular
+ *
+ * Until the provider exposes a dedicated
+ * popular endpoint in your account/API
+ * version, use the catalog search result.
+ */
+async function getPopularTracks(
+  limit = 20
+) {
+  const safeLimit = Math.min(
+    Math.max(
+      Number(limit) || 20,
+      1
+    ),
+    50
+  );
 
-  return result.tracks;
+  const params =
+    new URLSearchParams();
+
+  params.set(
+    "limit",
+    String(safeLimit)
+  );
+
+  params.set(
+    "offset",
+    "0"
+  );
+
+  params.set(
+    "includeExplicit",
+    "false"
+  );
+
+  const data =
+    await epidemicRequest(
+      `/v0/tracks/search?${params.toString()}`
+    );
+
+  const rawTracks =
+    extractTracks(data);
+
+  const tracks =
+    rawTracks
+      .map(normalizeTrack)
+      .filter(Boolean);
+
+  console.log(
+    "[MUSIC POPULAR RESULT]",
+    {
+      received: rawTracks.length,
+      normalized: tracks.length,
+    }
+  );
+
+  return tracks;
 }
 
-async function getTrackById(providerTrackId) {
+async function getTrackById(
+  providerTrackId
+) {
   if (!providerTrackId) {
     return null;
   }
@@ -275,16 +483,16 @@ async function getTrackById(providerTrackId) {
     );
 
   const tracks =
-    Array.isArray(data?.tracks)
-      ? data.tracks
-      : [];
+    extractTracks(data);
 
   return normalizeTrack(
     tracks[0]
   );
 }
 
-async function getTrackPreview(providerTrackId) {
+async function getTrackPreview(
+  providerTrackId
+) {
   if (!providerTrackId) {
     const error = new Error(
       "Track ID is required"
@@ -373,7 +581,9 @@ async function createTrackVersion(
   );
 }
 
-async function getTrackVersion(jobId) {
+async function getTrackVersion(
+  jobId
+) {
   if (!jobId) {
     const error = new Error(
       "Job ID is required"
