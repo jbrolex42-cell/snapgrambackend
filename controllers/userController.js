@@ -1,8 +1,13 @@
+const mongoose = require("mongoose");
+
 const User = require("../models/User");
 const Post = require("../models/Post");
 
 const uploadToCloudinary = require("../utils/uploadToCloudinary");
 
+/**
+ * Format a user for API responses.
+ */
 function formatUser(user) {
   return {
     _id: user._id,
@@ -29,38 +34,88 @@ function formatUser(user) {
   };
 }
 
+/**
+ * Find a user using either:
+ *
+ *   /users/profile/65f...
+ *
+ * OR:
+ *
+ *   /users/profile/ceo
+ *
+ * This is important because the mobile app may
+ * navigate using username instead of MongoDB _id.
+ */
+async function findUserByIdOrUsername(value, select = "") {
+  const identifier = String(value || "").trim();
+
+  if (!identifier) {
+    return null;
+  }
+
+  /*
+   * If it looks like a valid MongoDB ObjectId,
+   * search by _id first.
+   */
+  if (mongoose.Types.ObjectId.isValid(identifier)) {
+    const userById = await User.findById(identifier)
+      .select(select)
+      .lean();
+
+    if (userById) {
+      return userById;
+    }
+  }
+
+  /*
+   * Otherwise, treat it as a username.
+   */
+  return User.findOne({
+    username: identifier.toLowerCase(),
+  })
+    .select(select)
+    .lean();
+}
+
+/**
+ * GET /users/profile/:userId
+ *
+ * Supports:
+ *
+ * /users/profile/65f123...
+ * /users/profile/ceo
+ */
 async function getUserProfile(req, res) {
   try {
-    const userId = String(
+    const identifier = String(
       req.params.userId || ""
     ).trim();
 
-    if (!userId) {
+    if (!identifier) {
       return res.status(400).json({
-        message: "User ID is required",
+        message: "User ID or username is required",
       });
     }
 
-    const user = await User.findById(userId)
-      .select(
-        [
-          "_id",
-          "username",
-          "fullName",
-          "bio",
-          "avatar",
-          "website",
-          "pronouns",
-          "gender",
-          "isVerified",
-          "verificationStatus",
-          "followersCount",
-          "followingCount",
-          "isPrivate",
-          "createdAt",
-        ].join(" ")
-      )
-      .lean();
+    const user = await findUserByIdOrUsername(
+      identifier,
+      [
+        "_id",
+        "username",
+        "fullName",
+        "bio",
+        "avatar",
+        "website",
+        "pronouns",
+        "gender",
+        "isVerified",
+        "verificationStatus",
+        "followersCount",
+        "followingCount",
+        "isPrivate",
+        "createdAt",
+      ].join(" ")
+    );
 
     if (!user) {
       return res.status(404).json({
@@ -77,10 +132,16 @@ async function getUserProfile(req, res) {
     const isOwnProfile =
       currentUserId === profileUserId;
 
+    /*
+     * For now this remains false until your
+     * follow system is wired into this controller.
+     */
+    const isFollowing = false;
+
     return res.json({
       user: {
         ...formatUser(user),
-        isFollowing: false,
+        isFollowing,
         isOwnProfile,
       },
     });
@@ -92,10 +153,16 @@ async function getUserProfile(req, res) {
 
     return res.status(500).json({
       message: "Unable to load profile",
+      ...(process.env.NODE_ENV !== "production" && {
+        error: error?.message || "Unknown server error",
+      }),
     });
   }
 }
 
+/**
+ * PATCH /users/profile
+ */
 async function updateProfile(req, res) {
   try {
     if (!req.user?._id) {
@@ -234,8 +301,7 @@ async function updateProfile(req, res) {
       try {
         if (!req.file.buffer) {
           return res.status(400).json({
-            message:
-              "Invalid profile photo",
+            message: "Invalid profile photo",
           });
         }
 
@@ -253,8 +319,7 @@ async function updateProfile(req, res) {
           });
         }
 
-        user.avatar =
-          result.secure_url;
+        user.avatar = result.secure_url;
       } catch (uploadError) {
         console.error(
           "PROFILE PHOTO UPLOAD ERROR:",
@@ -322,6 +387,9 @@ async function updateProfile(req, res) {
   }
 }
 
+/**
+ * GET /users/search
+ */
 async function searchUsers(req, res) {
   try {
     const query = String(
@@ -415,6 +483,9 @@ async function searchUsers(req, res) {
   }
 }
 
+/**
+ * GET /users/saved
+ */
 async function getSavedPosts(req, res) {
   try {
     const user =
@@ -453,23 +524,39 @@ async function getSavedPosts(req, res) {
   }
 }
 
+/**
+ * GET /users/:userId/posts
+ *
+ * Supports:
+ *
+ * /users/65f123.../posts
+ * /users/ceo/posts
+ */
 async function getUserPosts(req, res) {
   try {
-    const userId = String(
+    const identifier = String(
       req.params.userId || ""
     ).trim();
 
-    if (!userId) {
+    if (!identifier) {
       return res.status(400).json({
-        message: "User ID is required",
+        message:
+          "User ID or username is required",
       });
     }
 
-    const user = await User.findById(userId)
-      .select(
-        "_id username fullName avatar isPrivate isVerified"
-      )
-      .lean();
+    const user =
+      await findUserByIdOrUsername(
+        identifier,
+        [
+          "_id",
+          "username",
+          "fullName",
+          "avatar",
+          "isPrivate",
+          "isVerified",
+        ].join(" ")
+      );
 
     if (!user) {
       return res.status(404).json({
@@ -477,17 +564,21 @@ async function getUserPosts(req, res) {
       });
     }
 
-    const posts = await Post.find({
-      user: user._id,
-    })
-      .populate(
-        "user",
-        "username fullName avatar isVerified"
-      )
-      .sort({
-        createdAt: -1,
+    const posts =
+      await Post.find({
+        user: user._id,
+        isArchived: {
+          $ne: true,
+        },
       })
-      .lean();
+        .populate(
+          "user",
+          "username fullName avatar isVerified"
+        )
+        .sort({
+          createdAt: -1,
+        })
+        .lean();
 
     return res.json({
       posts,
@@ -501,6 +592,13 @@ async function getUserPosts(req, res) {
     return res.status(500).json({
       message:
         "Failed to load user posts.",
+
+      ...(process.env.NODE_ENV !==
+        "production" && {
+        error:
+          error?.message ||
+          "Unknown server error",
+      }),
     });
   }
 }
