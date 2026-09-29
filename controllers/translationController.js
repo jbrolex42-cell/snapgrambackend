@@ -43,6 +43,7 @@ async function translateContent(req, res) {
     }
 
     const target = normalizeLanguage(targetLanguage);
+
     const source = sourceLanguage
       ? normalizeLanguage(sourceLanguage)
       : null;
@@ -66,10 +67,20 @@ async function translateContent(req, res) {
       });
     }
 
+    console.log("[TRANSLATION REQUEST]", {
+      textLength: cleanText.length,
+      sourceLanguage: source,
+      targetLanguage: target,
+    });
+
     const result = await translateText({
       text: cleanText,
       targetLanguage: target,
       sourceLanguage: source,
+    });
+
+    console.log("[TRANSLATION SUCCESS]", {
+      targetLanguage: target,
     });
 
     return res.json({
@@ -77,14 +88,24 @@ async function translateContent(req, res) {
       translation: result,
     });
   } catch (error) {
-    console.error(
-      "TRANSLATION ERROR:",
-      error?.response?.data || error?.message || error
-    );
+    console.error("[TRANSLATION ERROR]", {
+      message: error?.message,
+      status: error?.status,
+      responseStatus: error?.response?.status,
+      responseData: error?.response?.data,
+      code: error?.code,
+      stack: error?.stack,
+    });
 
-    return res.status(500).json({
+    const status =
+      Number(error?.status) ||
+      Number(error?.response?.status) ||
+      502;
+
+    return res.status(status >= 400 && status < 600 ? status : 502).json({
       success: false,
-      message: error?.message || "Translation failed",
+      message: "Translation service unavailable",
+      error: error?.message || "Translation failed",
     });
   }
 }
