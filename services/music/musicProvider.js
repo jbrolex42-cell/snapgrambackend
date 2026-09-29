@@ -161,9 +161,6 @@ function normalizeTrack(track) {
 
     artworkUrl,
 
-    // Epidemic preview/download URLs
-    // are obtained through their dedicated
-    // endpoints, so this remains empty here.
     audioUrl: "",
 
     durationMs,
@@ -252,13 +249,6 @@ async function searchTracks({
   const normalizedQuery =
     String(query || "").trim();
 
-  /*
-   * Only send "term" when the user
-   * actually searched for something.
-   *
-   * Do NOT send:
-   * term=
-   */
   if (normalizedQuery) {
     params.set(
       "term",
@@ -340,15 +330,6 @@ async function searchTracks({
   };
 }
 
-/*
- * Featured
- *
- * Epidemic's search endpoint should not
- * receive an empty "term".
- *
- * We first try the catalog/search endpoint
- * without a search term.
- */
 async function getFeaturedTracks(
   limit = 20
 ) {
@@ -402,13 +383,6 @@ async function getFeaturedTracks(
   return tracks;
 }
 
-/*
- * Popular
- *
- * Until the provider exposes a dedicated
- * popular endpoint in your account/API
- * version, use the catalog search result.
- */
 async function getPopularTracks(
   limit = 20
 ) {

@@ -5,9 +5,6 @@ const Post = require("../models/Post");
 
 const uploadToCloudinary = require("../utils/uploadToCloudinary");
 
-/**
- * Format a user for API responses.
- */
 function formatUser(user) {
   return {
     _id: user._id,
@@ -34,18 +31,6 @@ function formatUser(user) {
   };
 }
 
-/**
- * Find a user using either:
- *
- *   /users/profile/65f...
- *
- * OR:
- *
- *   /users/profile/ceo
- *
- * This is important because the mobile app may
- * navigate using username instead of MongoDB _id.
- */
 async function findUserByIdOrUsername(value, select = "") {
   const identifier = String(value || "").trim();
 
@@ -53,10 +38,6 @@ async function findUserByIdOrUsername(value, select = "") {
     return null;
   }
 
-  /*
-   * If it looks like a valid MongoDB ObjectId,
-   * search by _id first.
-   */
   if (mongoose.Types.ObjectId.isValid(identifier)) {
     const userById = await User.findById(identifier)
       .select(select)
@@ -67,9 +48,6 @@ async function findUserByIdOrUsername(value, select = "") {
     }
   }
 
-  /*
-   * Otherwise, treat it as a username.
-   */
   return User.findOne({
     username: identifier.toLowerCase(),
   })
@@ -77,14 +55,6 @@ async function findUserByIdOrUsername(value, select = "") {
     .lean();
 }
 
-/**
- * GET /users/profile/:userId
- *
- * Supports:
- *
- * /users/profile/65f123...
- * /users/profile/ceo
- */
 async function getUserProfile(req, res) {
   try {
     const identifier = String(
@@ -132,10 +102,6 @@ async function getUserProfile(req, res) {
     const isOwnProfile =
       currentUserId === profileUserId;
 
-    /*
-     * For now this remains false until your
-     * follow system is wired into this controller.
-     */
     const isFollowing = false;
 
     return res.json({
@@ -160,9 +126,6 @@ async function getUserProfile(req, res) {
   }
 }
 
-/**
- * PATCH /users/profile
- */
 async function updateProfile(req, res) {
   try {
     if (!req.user?._id) {
@@ -387,9 +350,6 @@ async function updateProfile(req, res) {
   }
 }
 
-/**
- * GET /users/search
- */
 async function searchUsers(req, res) {
   try {
     const query = String(
@@ -483,9 +443,6 @@ async function searchUsers(req, res) {
   }
 }
 
-/**
- * GET /users/saved
- */
 async function getSavedPosts(req, res) {
   try {
     const user =
@@ -524,14 +481,6 @@ async function getSavedPosts(req, res) {
   }
 }
 
-/**
- * GET /users/:userId/posts
- *
- * Supports:
- *
- * /users/65f123.../posts
- * /users/ceo/posts
- */
 async function getUserPosts(req, res) {
   try {
     const identifier = String(

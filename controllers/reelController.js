@@ -23,10 +23,6 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 20;
 
-/* -------------------------------------------------------
-   HELPERS
-------------------------------------------------------- */
-
 function getUserId(req) {
   const id =
     req.user?._id ||
@@ -154,11 +150,6 @@ function populateReel(query) {
   });
 }
 
-/* -------------------------------------------------------
-   GET ALL REELS
-   GET /api/reels
-------------------------------------------------------- */
-
 async function getReels(req, res) {
   try {
     const userId = getUserId(req);
@@ -169,15 +160,6 @@ async function getReels(req, res) {
       skip,
     } = getPagination(req);
 
-    /*
-      IMPORTANT:
-
-      Reels are Post documents where:
-
-        postType === "reel"
-
-      Do NOT use Reel.find().
-    */
 
     const filter = {
       postType: "reel",
@@ -256,11 +238,6 @@ async function getReels(req, res) {
   }
 }
 
-/* -------------------------------------------------------
-   GET SINGLE REEL
-   GET /api/reels/:id
-------------------------------------------------------- */
-
 async function getReel(req, res) {
   try {
     const { id } = req.params;
@@ -314,11 +291,6 @@ async function getReel(req, res) {
     });
   }
 }
-
-/* -------------------------------------------------------
-   LIKE REEL
-   POST /api/reels/:id/like
-------------------------------------------------------- */
 
 async function likeReel(req, res) {
   try {
@@ -386,11 +358,6 @@ async function likeReel(req, res) {
   }
 }
 
-/* -------------------------------------------------------
-   UNLIKE REEL
-   DELETE /api/reels/:id/like
-------------------------------------------------------- */
-
 async function unlikeReel(req, res) {
   try {
     const userId = getUserId(req);
@@ -456,11 +423,6 @@ async function unlikeReel(req, res) {
     });
   }
 }
-
-/* -------------------------------------------------------
-   TOGGLE LIKE
-   POST /api/reels/:id/toggle-like
-------------------------------------------------------- */
 
 async function toggleReelLike(
   req,
@@ -541,11 +503,6 @@ async function toggleReelLike(
     });
   }
 }
-
-/* -------------------------------------------------------
-   SAVE / UNSAVE REEL
-   POST /api/reels/:id/save
-------------------------------------------------------- */
 
 async function saveReel(req, res) {
   try {
@@ -631,11 +588,6 @@ async function saveReel(req, res) {
     });
   }
 }
-
-/* -------------------------------------------------------
-   VIEW REEL
-   POST /api/reels/:id/view
-------------------------------------------------------- */
 
 async function incrementViews(
   req,
