@@ -22,27 +22,75 @@ function getUserId(req) {
 
 async function searchMusic(req, res) {
   try {
-    const result = await searchTracks({
-      query: req.query.q || "",
-      page: req.query.page || 1,
-      limit: req.query.limit || 20,
-    });
+    const query = String(
+      req.query.q || ""
+    ).trim();
+
+    const page = Math.max(
+      Number(req.query.page) || 1,
+      1
+    );
+
+    const limit = Math.min(
+      Math.max(
+        Number(req.query.limit) || 20,
+        1
+      ),
+      50
+    );
+
+    /*
+     * Empty search:
+     *
+     * Do NOT call the provider's search endpoint without
+     * a search term. Use featured music instead.
+     */
+    if (!query) {
+      const tracks =
+        await getFeaturedTracks(limit);
+
+      return res.json({
+        success: true,
+        tracks,
+        page: 1,
+        limit,
+        total: tracks.length,
+        hasMore: false,
+      });
+    }
+
+    const result =
+      await searchTracks({
+        query,
+        page,
+        limit,
+      });
 
     return res.json({
       success: true,
       ...result,
     });
   } catch (error) {
-    console.error("[MUSIC] SEARCH ERROR:", {
-      message: error?.message,
-      status: error?.status,
-      data: error?.data,
-      stack: error?.stack,
-    });
+    console.error(
+      "[MUSIC] SEARCH ERROR:",
+      {
+        message: error?.message,
+        status: error?.status,
+        data: error?.data,
+        stack: error?.stack,
+      }
+    );
 
-    return res.status(error.status || 500).json({
+    return res.status(
+      error.status || 500
+    ).json({
       success: false,
       message: "Unable to search music.",
+      ...(process.env.NODE_ENV !== "production" && {
+        providerError: error?.message,
+        providerStatus: error?.status,
+        providerData: error?.data,
+      }),
     });
   }
 }
