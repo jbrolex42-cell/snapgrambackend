@@ -28,7 +28,6 @@ async function epidemicRequest(path, options = {}) {
 
   const response = await fetch(url, {
     ...options,
-
     headers: {
       Accept: "application/json",
       Authorization: `Bearer ${API_KEY}`,
@@ -82,6 +81,8 @@ async function epidemicRequest(path, options = {}) {
       ? data.tracks.length
       : Array.isArray(data?.data)
       ? data.data.length
+      : Array.isArray(data?.results)
+      ? data.results.length
       : undefined,
   });
 
@@ -130,16 +131,10 @@ function normalizeTrack(track) {
       0
   );
 
-  if (
-    !durationMs &&
-    track.duration != null
-  ) {
-    const durationNumber =
-      Number(track.duration);
+  if (!durationMs && track.duration != null) {
+    const durationNumber = Number(track.duration);
 
-    if (
-      Number.isFinite(durationNumber)
-    ) {
+    if (Number.isFinite(durationNumber)) {
       durationMs =
         durationNumber < 10000
           ? durationNumber * 1000
@@ -147,8 +142,31 @@ function normalizeTrack(track) {
     }
   }
 
+  /*
+   * IMPORTANT:
+   *
+   * Do not force audioUrl to "".
+   *
+   * Different provider responses may expose a playable/preview
+   * URL under different fields. Preserve one if the provider
+   * actually supplies it.
+   */
+  const audioUrl =
+    track.audioUrl ||
+    track.audioURL ||
+    track.previewUrl ||
+    track.previewURL ||
+    track.streamUrl ||
+    track.streamURL ||
+    track.playbackUrl ||
+    track.playbackURL ||
+    track.url ||
+    "";
+
+  const providerTrackId = String(id);
+
   return {
-    id: String(id),
+    id: providerTrackId,
 
     title:
       track.title ||
@@ -161,13 +179,25 @@ function normalizeTrack(track) {
 
     artworkUrl,
 
-    audioUrl: "",
+    audioUrl,
 
     durationMs,
 
+    /*
+     * This URL points back to Snapgram's authenticated preview
+     * endpoint. The mobile app can use it when the provider's
+     * search response doesn't contain a direct audio URL.
+     */
+    previewUrl:
+      `/music/${encodeURIComponent(
+        providerTrackId
+      )}/preview`,
+
+    duration: durationMs,
+
     provider: "epidemic",
 
-    providerTrackId: String(id),
+    providerTrackId,
 
     genre:
       track.genre?.name ||
@@ -211,11 +241,7 @@ function extractTracks(data) {
     return data.results;
   }
 
-  if (
-    Array.isArray(
-      data?.items
-    )
-  ) {
+  if (Array.isArray(data?.items)) {
     return data.items;
   }
 
@@ -281,12 +307,9 @@ async function searchTracks({
     "false"
   );
 
-  const queryString =
-    params.toString();
-
   const data =
     await epidemicRequest(
-      `/v0/tracks/search?${queryString}`
+      `/v0/tracks/search?${params.toString()}`
     );
 
   const rawTracks =
@@ -323,16 +346,12 @@ async function searchTracks({
     page: safePage,
     limit: safeLimit,
     total,
-
     hasMore:
-      tracks.length ===
-      safeLimit,
+      tracks.length === safeLimit,
   };
 }
 
-async function getFeaturedTracks(
-  limit = 20
-) {
+async function getFeaturedTracks(limit = 20) {
   const safeLimit = Math.min(
     Math.max(
       Number(limit) || 20,
@@ -377,15 +396,16 @@ async function getFeaturedTracks(
     {
       received: rawTracks.length,
       normalized: tracks.length,
+      withAudioUrl: tracks.filter(
+        (track) => Boolean(track.audioUrl)
+      ).length,
     }
   );
 
   return tracks;
 }
 
-async function getPopularTracks(
-  limit = 20
-) {
+async function getPopularTracks(limit = 20) {
   const safeLimit = Math.min(
     Math.max(
       Number(limit) || 20,
@@ -430,15 +450,16 @@ async function getPopularTracks(
     {
       received: rawTracks.length,
       normalized: tracks.length,
+      withAudioUrl: tracks.filter(
+        (track) => Boolean(track.audioUrl)
+      ).length,
     }
   );
 
   return tracks;
 }
 
-async function getTrackById(
-  providerTrackId
-) {
+async function getTrackById(providerTrackId) {
   if (!providerTrackId) {
     return null;
   }
@@ -464,9 +485,14 @@ async function getTrackById(
   );
 }
 
-async function getTrackPreview(
-  providerTrackId
-) {
+/*
+ * Returns the provider's HLS preview information.
+ *
+ * The controller exposes this through:
+ *
+ * GET /api/music/:id/preview
+ */
+async function getTrackPreview(providerTrackId) {
   if (!providerTrackId) {
     const error = new Error(
       "Track ID is required"
@@ -477,11 +503,30 @@ async function getTrackPreview(
     throw error;
   }
 
-  return epidemicRequest(
-    `/v0/tracks/${encodeURIComponent(
-      providerTrackId
-    )}/hls`
+  const result =
+    await epidemicRequest(
+      `/v0/tracks/${encodeURIComponent(
+        providerTrackId
+      )}/hls`
+    );
+
+  console.log(
+    "[MUSIC PREVIEW RESULT]",
+    {
+      trackId: providerTrackId,
+      type: Array.isArray(result)
+        ? "array"
+        : typeof result,
+      keys:
+        result &&
+        typeof result === "object" &&
+        !Array.isArray(result)
+          ? Object.keys(result)
+          : [],
+    }
   );
+
+  return result;
 }
 
 async function getTrackDownload(
@@ -555,9 +600,7 @@ async function createTrackVersion(
   );
 }
 
-async function getTrackVersion(
-  jobId
-) {
+async function getTrackVersion(jobId) {
   if (!jobId) {
     const error = new Error(
       "Job ID is required"
@@ -576,10 +619,18 @@ async function getTrackVersion(
 }
 
 async function incrementPlayCount() {
+  /*
+   * Currently handled by provider/analytics.
+   * Keep endpoint functional without failing the client.
+   */
   return;
 }
 
 async function incrementUseCount() {
+  /*
+   * Currently handled by provider/analytics.
+   * Keep endpoint functional without failing the client.
+   */
   return;
 }
 
